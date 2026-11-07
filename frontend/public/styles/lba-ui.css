@@ -6,6 +6,21 @@
    ========================================================================== */
 
 /* --------------------------------------------------------------------------
+   0. Spinner — swapped in for a button's icon while its action is in flight
+   -------------------------------------------------------------------------- */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block;
+  width: 1em; height: 1em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+
+/* --------------------------------------------------------------------------
    1. Base / reset
    -------------------------------------------------------------------------- */
 *, *::before, *::after { box-sizing: border-box; }

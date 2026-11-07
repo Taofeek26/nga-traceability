@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
-import { Alert, Avatar, Icon, PageHeader } from '../components/ui'
+import { Alert, Avatar, ButtonIcon, Icon, PageHeader } from '../components/ui'
 
 interface EligibilityResponse {
   n_eligible: number
@@ -228,7 +228,7 @@ export default function NewLot() {
         <div className="card__footer">
           <a className="btn btn--ghost" href="/lots">Cancel</a>
           <button className="btn btn--primary" type="submit" disabled={busy || nEligible === 0}>
-            <Icon name="sparkles" />Generate farmer list
+            <ButtonIcon name="sparkles" busy={busy} />Generate farmer list
           </button>
         </div>
       </form>

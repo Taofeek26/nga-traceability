@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import AuthShell from '../components/AuthShell'
-import { Alert } from '../components/ui'
+import { Alert, Spinner } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
 import { ApiError } from '../api/client'
 
@@ -46,8 +46,9 @@ export default function Login() {
                  value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         <div className="form-actions">
-          <button className="btn btn--primary btn--lg btn--block" type="submit" disabled={busy}>
-            {busy ? 'Logging in…' : 'Log in'}
+          <button className="btn btn--primary btn--lg btn--block" type="submit" disabled={busy}
+                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-2)' }}>
+            {busy && <Spinner />}{busy ? 'Logging in…' : 'Log in'}
           </button>
         </div>
       </form>

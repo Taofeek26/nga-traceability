@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { Alert, Avatar, Icon, PageHeader } from '../components/ui'
+import { Alert, Avatar, ButtonIcon, Icon, PageHeader, Spinner } from '../components/ui'
 
 interface TeamMember {
   id: number
@@ -24,9 +24,10 @@ export default function Users() {
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [toggleBusyId, setToggleBusyId] = useState<number | null>(null)
 
   async function toggleActive(id: number) {
-    setBusy(true)
+    setToggleBusyId(id)
     setError('')
     try {
       await api.post(`/users/${id}/toggle-active`)
@@ -34,16 +35,17 @@ export default function Users() {
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "You can't deactivate your own account.")
     } finally {
-      setBusy(false)
+      setToggleBusyId(null)
     }
   }
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    const formEl = e.currentTarget
     setMsg('')
     setError('')
     setBusy(true)
-    const form = new FormData(e.currentTarget)
+    const form = new FormData(formEl)
     const name = form.get('name')
     try {
       const resp = await api.post<{ name: string; role_label: string }>('/users', {
@@ -53,7 +55,7 @@ export default function Users() {
         role: form.get('role'),
       })
       setMsg(`${resp.name} added as ${resp.role_label}`)
-      e.currentTarget.reset()
+      formEl.reset()
       reload()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong.')
@@ -85,8 +87,9 @@ export default function Users() {
                   <td>{u.active ? <span className="badge badge--ok">Active</span> : <span className="badge badge--inactive">Inactive</span>}</td>
                   <td className="is-action">
                     {u.id !== user?.user_id ? (
-                      <button className="btn btn--ghost btn--sm" type="button" disabled={busy} onClick={() => toggleActive(u.id)}>
-                        {u.active ? 'Deactivate' : 'Reactivate'}
+                      <button className="btn btn--ghost btn--sm" type="button" disabled={toggleBusyId === u.id} onClick={() => toggleActive(u.id)}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+                        {toggleBusyId === u.id && <Spinner />}{u.active ? 'Deactivate' : 'Reactivate'}
                       </button>
                     ) : (
                       <span className="text-muted" style={{ fontSize: 'var(--text-xs)' }}>You</span>
@@ -133,7 +136,7 @@ export default function Users() {
             </div>
           </div>
           <div className="card__footer">
-            <button className="btn btn--primary" type="submit" disabled={busy}><Icon name="plus" />Add team member</button>
+            <button className="btn btn--primary" type="submit" disabled={busy}><ButtonIcon name="plus" busy={busy} />Add team member</button>
           </div>
         </form>
       </div>

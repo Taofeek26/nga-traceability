@@ -1,7 +1,7 @@
 import { useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
-import { Alert, EmptyState, Icon, PageHeader } from '../components/ui'
+import { Alert, ButtonIcon, EmptyState, Icon, PageHeader } from '../components/ui'
 
 interface Doc {
   id: number
@@ -24,6 +24,7 @@ export default function Documents() {
   const { data, error: loadError, reload } = useApiGet<{ documents: Doc[] }>('/documents')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [busyId, setBusyId] = useState<number | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const [fileName, setFileName] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
@@ -64,21 +65,27 @@ export default function Documents() {
   }
 
   async function download(id: number) {
+    setBusyId(id)
     try {
       const resp = await api.get<{ download_url: string }>(`/documents/${id}/download`)
       window.open(resp.download_url, '_blank')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not generate the download link.')
+    } finally {
+      setBusyId(null)
     }
   }
 
   async function remove(id: number) {
     if (!confirm('Delete this document? This cannot be undone.')) return
+    setBusyId(id)
     try {
       await api.delete(`/documents/${id}`)
       reload()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not delete the document.')
+    } finally {
+      setBusyId(null)
     }
   }
 
@@ -115,7 +122,7 @@ export default function Documents() {
           </label>
         </div>
         <div className="card__footer">
-          <button className="btn btn--primary" type="submit" disabled={busy}><Icon name="upload" />Upload</button>
+          <button className="btn btn--primary" type="submit" disabled={busy}><ButtonIcon name="upload" busy={busy} />Upload</button>
         </div>
       </form>
 
@@ -134,8 +141,8 @@ export default function Documents() {
                     <td className="is-num hide-sm">{formatSize(d.size_bytes)}</td>
                     <td className="is-action">
                       <div className="cluster">
-                        <button className="btn btn--ghost btn--sm" type="button" onClick={() => download(d.id)}><Icon name="download" />Download</button>
-                        <button className="btn btn--ghost btn--sm" type="button" onClick={() => remove(d.id)}><Icon name="trash" /></button>
+                        <button className="btn btn--ghost btn--sm" type="button" disabled={busyId === d.id} onClick={() => download(d.id)}><ButtonIcon name="download" busy={busyId === d.id} />Download</button>
+                        <button className="btn btn--ghost btn--sm" type="button" disabled={busyId === d.id} onClick={() => remove(d.id)}><ButtonIcon name="trash" busy={busyId === d.id} /></button>
                       </div>
                     </td>
                   </tr>

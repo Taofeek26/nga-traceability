@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { Alert, Avatar, EmptyState, FarmerStatusBadge, Icon, LotStatusBadge, PageHeader, ProgressBar } from '../components/ui'
+import { Alert, Avatar, ButtonIcon, EmptyState, FarmerStatusBadge, Icon, LotStatusBadge, PageHeader, ProgressBar } from '../components/ui'
 import { formatKg, formatNaira } from '../components/format'
 
 interface Farmer {
@@ -72,7 +72,8 @@ export default function FarmerDetail() {
 
   async function addIncentive(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    const form = new FormData(e.currentTarget)
+    const formEl = e.currentTarget
+    const form = new FormData(formEl)
     setBusy(true)
     setActionError('')
     try {
@@ -82,7 +83,7 @@ export default function FarmerDetail() {
         incentive_date: form.get('incentive_date'),
         note: form.get('note') || '',
       })
-      e.currentTarget.reset()
+      formEl.reset()
       reload()
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Something went wrong.')
@@ -114,7 +115,7 @@ export default function FarmerDetail() {
         {user?.role === 'admin' && (
           <div className="page-header__actions">
             <button className={f.active ? 'btn btn--secondary' : 'btn btn--primary'} type="button" disabled={busy} onClick={toggleActive}>
-              <Icon name="power" />{f.active ? 'Mark inactive' : 'Reactivate'}
+              <ButtonIcon name="power" busy={busy} />{f.active ? 'Mark inactive' : 'Reactivate'}
             </button>
           </div>
         )}
@@ -199,7 +200,7 @@ export default function FarmerDetail() {
                     </div>
                   </div>
                   <div className="form-actions">
-                    <button className="btn btn--accent" type="submit" disabled={busy}><Icon name="plus" />Add incentive</button>
+                    <button className="btn btn--accent" type="submit" disabled={busy}><ButtonIcon name="plus" busy={busy} />Add incentive</button>
                   </div>
                 </form>
               </div>

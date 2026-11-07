@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { Alert, Avatar, Icon, LotStatusBadge } from '../components/ui'
+import { Alert, Avatar, ButtonIcon, Icon, LotStatusBadge } from '../components/ui'
 import { formatKg } from '../components/format'
 
 interface Lot {
@@ -75,11 +75,14 @@ export default function LotResult() {
   }
 
   async function exportSlip() {
+    setBusy(true)
     try {
       const resp = await api.get<{ download_url: string }>(`/lots/${id}/export`)
       window.open(resp.download_url, '_blank')
     } catch (err) {
       setActionError(err instanceof ApiError ? err.message : 'Could not generate the export.')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -116,10 +119,10 @@ export default function LotResult() {
           <a className="btn btn--secondary" href="/lots/new"><Icon name="plus" />Record another</a>
           {lot.status === 'accepted' && canReview && (
             <button className="btn btn--secondary" type="button" disabled={busy} onClick={generateReceipts}>
-              <Icon name="file-sheet" />Generate receipts
+              <ButtonIcon name="file-sheet" busy={busy} />Generate receipts
             </button>
           )}
-          <button className="btn btn--accent" type="button" onClick={exportSlip}><Icon name="download" />Export delivery slip</button>
+          <button className="btn btn--accent" type="button" disabled={busy} onClick={exportSlip}><ButtonIcon name="download" busy={busy} />Export delivery slip</button>
         </div>
       </header>
 
@@ -146,10 +149,10 @@ export default function LotResult() {
                 </div>
                 <button className="btn btn--secondary" type="button" disabled={busy}
                         onClick={() => { if (confirm('Reject this lot?')) review('reject') }}>
-                  <Icon name="x" />Reject
+                  <ButtonIcon name="x" busy={busy} />Reject
                 </button>
                 <button className="btn btn--primary" type="button" disabled={busy || !certification} onClick={() => review('accept')}>
-                  <Icon name="check" />Accept lot
+                  <ButtonIcon name="check" busy={busy} />Accept lot
                 </button>
               </div>
             </div>
@@ -223,7 +226,7 @@ export default function LotResult() {
         <span className="action-bar__text"><strong>{rows.length} farmers</strong> &middot; {formatKg(lot.total_volume_kg, 2)} kg &middot; <LotStatusBadge status={lot.status} /></span>
         <div className="cluster">
           <a className="btn btn--secondary" href="/lots/new">Record another</a>
-          <button className="btn btn--accent" type="button" onClick={exportSlip}><Icon name="download" />Export .xlsx</button>
+          <button className="btn btn--accent" type="button" disabled={busy} onClick={exportSlip}><ButtonIcon name="download" busy={busy} />Export .xlsx</button>
         </div>
       </div>
     </>

@@ -12,6 +12,17 @@ export function Icon({ name, size = '', label = '' }: { name: string; size?: '' 
     : <svg className={cls} aria-hidden="true"><use href={`#i-${name}`} /></svg>
 }
 
+export function Spinner() {
+  return <span className="spinner" role="status" aria-label="Loading" />
+}
+
+/** The icon a button shows normally, swapped for a spinner while its own
+ * action is in flight - use on every button that triggers an async action,
+ * not just a disabled/greyed-out state. */
+export function ButtonIcon({ name, busy }: { name: string; busy: boolean }) {
+  return busy ? <Spinner /> : <Icon name={name} />
+}
+
 export function NavLink({ to, label, iconName }: { to: string; label: string; iconName: string }) {
   return (
     <RouterNavLink to={to} className={({ isActive }) => 'nav__link' + (isActive ? ' is-active' : '')} end>

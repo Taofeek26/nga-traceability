@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
-import { Alert, Icon, PageHeader } from '../components/ui'
+import { Alert, ButtonIcon, PageHeader } from '../components/ui'
 
 interface SettingsResponse {
   premium_rate_per_kg: string
@@ -83,7 +83,7 @@ export default function Settings() {
           </div>
         </div>
         <div className="card__footer">
-          <button className="btn btn--primary" type="submit" disabled={busy}><Icon name="check" />Save changes</button>
+          <button className="btn btn--primary" type="submit" disabled={busy}><ButtonIcon name="check" busy={busy} />Save changes</button>
         </div>
       </form>
     </>
