@@ -121,7 +121,6 @@ export default function FarmerDetail() {
       </header>
 
       {actionError && <Alert message={actionError} kind="error" />}
-      {error && <Alert message={error} kind="error" title="Couldn't refresh this page" />}
 
       <section className="stats">
         <div className="stat">

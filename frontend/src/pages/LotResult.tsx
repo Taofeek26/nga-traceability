@@ -125,7 +125,6 @@ export default function LotResult() {
 
       {msg && <Alert message={msg} kind="success" />}
       {actionError && <Alert message={actionError} kind="error" />}
-      {error && <Alert message={error} kind="error" title="Couldn't refresh this lot" />}
 
       {lot.status === 'pending' && (
         canReview ? (

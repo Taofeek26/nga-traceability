@@ -70,7 +70,6 @@ export default function Users() {
       <PageHeader title="Team" desc="Who can access this LBA's account, and what they can do." eyebrow="Administration" />
       {msg && <Alert message={msg} kind="success" />}
       {error && <Alert message={error} kind="error" />}
-      {loadError && <Alert message={loadError} kind="error" title="Couldn't refresh the team list" />}
 
       <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
         <div className="card__header"><div className="card__title"><Icon name="users" />Team members</div></div>
