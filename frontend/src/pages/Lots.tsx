@@ -1,7 +1,7 @@
 import { useApiGet } from '../api/useApiGet'
 import { useAuth } from '../context/AuthContext'
 import { Alert, EmptyState, Icon, LotStatusBadge, PageHeader } from '../components/ui'
-import { formatKg } from '../components/format'
+import { certificationLabel, formatKg } from '../components/format'
 
 interface Lot {
   id: number
@@ -13,6 +13,7 @@ interface Lot {
   total_volume_kg: number
   status: string
   note: string | null
+  certification: string | null
 }
 
 export default function Lots() {
@@ -34,7 +35,7 @@ export default function Lots() {
           <div className="table-wrap">
             <table className="table">
               <thead>
-                <tr><th>Lot</th><th>Receipts</th><th className="is-num">Farmers</th><th className="is-num">Volume (kg)</th><th>Status</th><th className="hide-sm">Note</th><th className="is-action"><span className="sr-only">Open</span></th></tr>
+                <tr><th>Lot</th><th>Receipts</th><th className="is-num">Farmers</th><th className="is-num">Volume (kg)</th><th>Status</th><th>Certification</th><th className="hide-sm">Note</th><th className="is-action"><span className="sr-only">Open</span></th></tr>
               </thead>
               <tbody>
                 {lots.map((l) => (
@@ -44,6 +45,7 @@ export default function Lots() {
                     <td className="is-num">{l.n_farmers}</td>
                     <td className="is-num">{formatKg(l.total_volume_kg, 2)}</td>
                     <td><LotStatusBadge status={l.status} /></td>
+                    <td>{l.certification ? <span className="badge badge--gold badge--plain">{certificationLabel(l.certification)}</span> : <span className="is-muted">&mdash;</span>}</td>
                     <td className="hide-sm is-muted">{l.note || ''}</td>
                     <td className="is-action"><a className="btn btn--ghost btn--sm" href={`/lots/${l.id}`}>View <Icon name="chevron-right" /></a></td>
                   </tr>

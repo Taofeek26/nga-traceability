@@ -4,7 +4,7 @@ import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { Alert, Avatar, ButtonIcon, Icon, LotStatusBadge } from '../components/ui'
-import { formatKg } from '../components/format'
+import { CERTIFICATIONS, formatKg } from '../components/format'
 
 interface Lot {
   id: number
@@ -21,12 +21,6 @@ interface Lot {
   bags_declared: number | null
   moisture_pct: number | null
   certification: string | null
-}
-
-const CERTIFICATIONS: Record<string, string> = {
-  cocoa_horizons: 'Cocoa Horizons',
-  rainforest_alliance: 'Rainforest Alliance',
-  eudr: 'EUDR',
 }
 
 interface LotRow {
