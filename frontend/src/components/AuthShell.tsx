@@ -18,11 +18,6 @@ export default function AuthShell({
         </a>
         <h2 className="auth__headline">Every kilo, traced back to a <em>registered farmer</em>.</h2>
         <p className="auth__lead">Turn a broker lot's total weight and receipt range into a quota-respecting farmer list — ready to export in seconds.</p>
-        <ul className="auth__features">
-          <li><Icon name="check-circle" /><span>Farmer register from your own Excel master list</span></li>
-          <li><Icon name="check-circle" /><span>Automatic allocation that never exceeds a farmer's potential volume</span></li>
-          <li><Icon name="check-circle" /><span>Private to your LBA — no other account can see your data</span></li>
-        </ul>
         <p className="auth__foot">JIMGAF Traceability</p>
       </aside>
 
