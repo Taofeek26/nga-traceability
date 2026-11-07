@@ -91,7 +91,7 @@ export default function FarmerDetail() {
     }
   }
 
-  if (error) return <Alert message={error} kind="error" />
+  if (error && !data) return <Alert message={error} kind="error" />
   if (!data) return <p className="text-muted">Loading…</p>
 
   const { farmer: f, deliveries, delivered, pending, remaining, incentives, premium_rate, premium_accrued, other_incentives, total_entitlement } = data
@@ -121,6 +121,7 @@ export default function FarmerDetail() {
       </header>
 
       {actionError && <Alert message={actionError} kind="error" />}
+      {error && <Alert message={error} kind="error" title="Couldn't refresh this page" />}
 
       <section className="stats">
         <div className="stat">
