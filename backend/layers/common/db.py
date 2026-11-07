@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS farmers (
     num_plots INTEGER DEFAULT 0,
     farm_size_ha REAL DEFAULT 0,
     potential_volume_kg REAL NOT NULL DEFAULT 0,
+    opening_delivered_kg REAL NOT NULL DEFAULT 0,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -140,6 +141,7 @@ CREATE INDEX IF NOT EXISTS idx_audit_lba_created ON audit_log(lba_id, created_at
 # already-populated table doesn't need that table recreated.
 MIGRATIONS = """
 ALTER TABLE lots ADD COLUMN IF NOT EXISTS certification TEXT;
+ALTER TABLE farmers ADD COLUMN IF NOT EXISTS opening_delivered_kg REAL NOT NULL DEFAULT 0;
 """
 
 

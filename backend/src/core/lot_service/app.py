@@ -54,17 +54,20 @@ def _eligible_farmers(conn, lba_id):
     lots can each be built against a farmer's full remaining quota; the
     accept-time check in _review() is what actually stops a farmer from
     ever ending up over-delivered once both get accepted."""
+    # potential - opening_delivered_kg (whatever this farmer already had
+    # delivered before being tracked here, from a manually-managed
+    # register uploaded at onboarding) - accepted lot volume.
     return conn.execute(
         """
         SELECT f.id,
-               f.potential_volume_kg - COALESCE(SUM(a.allocated_volume_kg)
+               f.potential_volume_kg - f.opening_delivered_kg - COALESCE(SUM(a.allocated_volume_kg)
                    FILTER (WHERE l.status = 'accepted'), 0) AS remaining
         FROM farmers f
         LEFT JOIN lot_allocations a ON a.farmer_id = f.id
         LEFT JOIN lots l ON l.id = a.lot_id
         WHERE f.lba_id=%s AND f.active = TRUE
         GROUP BY f.id
-        HAVING f.potential_volume_kg - COALESCE(SUM(a.allocated_volume_kg)
+        HAVING f.potential_volume_kg - f.opening_delivered_kg - COALESCE(SUM(a.allocated_volume_kg)
             FILTER (WHERE l.status = 'accepted'), 0) > 0
         """,
         (lba_id,),
@@ -250,7 +253,8 @@ def _review(event, lba_id, new_status):
             # reveals the conflict with another already-accepted lot.
             conflicts = conn.execute(
                 """
-                SELECT f.farmer_code, f.full_name, f.potential_volume_kg, a.allocated_volume_kg,
+                SELECT f.farmer_code, f.full_name, f.potential_volume_kg, f.opening_delivered_kg,
+                       a.allocated_volume_kg,
                        COALESCE((
                          SELECT SUM(a2.allocated_volume_kg) FROM lot_allocations a2
                          JOIN lots l2 ON l2.id = a2.lot_id
@@ -264,12 +268,13 @@ def _review(event, lba_id, new_status):
             ).fetchall()
             over = [
                 c for c in conflicts
-                if c["other_accepted"] + c["allocated_volume_kg"] > c["potential_volume_kg"] + 0.01
+                if c["opening_delivered_kg"] + c["other_accepted"] + c["allocated_volume_kg"]
+                    > c["potential_volume_kg"] + 0.01
             ]
             if over:
                 names = ", ".join(
                     f"{c['full_name']} ({c['farmer_code']}) by "
-                    f"{round(c['other_accepted'] + c['allocated_volume_kg'] - c['potential_volume_kg'], 2):g}kg"
+                    f"{round(c['opening_delivered_kg'] + c['other_accepted'] + c['allocated_volume_kg'] - c['potential_volume_kg'], 2):g}kg"
                     for c in over
                 )
                 return hu.error(

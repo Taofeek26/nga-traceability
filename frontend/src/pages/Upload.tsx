@@ -137,10 +137,11 @@ export default function Upload() {
             <div>
               <div className="label" style={{ marginBottom: 'var(--space-2)' }}>Optional columns</div>
               <div className="chips">
-                {['Farmer id', 'Gender', 'Date of birth', 'Phone number', 'NIN', 'Community Name', 'Num plots', 'Total Farm Size Mapped (Ha)'].map((c) => (
+                {['Farmer id', 'Gender', 'Date of birth', 'Phone number', 'NIN', 'Community Name', 'Num plots', 'Total Farm Size Mapped (Ha)', 'Net Weight (Kg)'].map((c) => (
                   <span key={c} className="code-tag" style={{ background: 'var(--cream)', color: 'var(--taupe)' }}>{c}</span>
                 ))}
               </div>
+              <p className="hint" style={{ marginTop: 'var(--space-2)' }}>"Net Weight (Kg)" is for a farmer who already has delivery history from before this system — fill it in with their total delivered-to-date, from a register you tracked manually or a previous export from here. Leave it out, or at 0, for a farmer with no prior history.</p>
             </div>
           </div>
         </div>

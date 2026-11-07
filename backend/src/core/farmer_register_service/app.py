@@ -38,6 +38,18 @@ HEADER_ALIASES = {
     "num_plots": "num_plots", "number_of_plots": "num_plots",
     "farm_size_ha": "farm_size_ha", "total_farm_size_mapped_ha": "farm_size_ha",
     "potential_volume_kg": "potential_volume_kg", "potential_volume": "potential_volume_kg",
+    # A farmer register that was tracked manually (in Excel, say) before
+    # moving onto this system - or a previous export from this system,
+    # re-uploaded - already has a "Net Weight" column: what's actually been
+    # delivered so far. Treated as an opening balance on top of whatever
+    # gets allocated through lots going forward, so migrating mid-season
+    # doesn't require recreating every historical delivery as a lot.
+    "net_weight_kg": "opening_delivered_kg", "net_weight": "opening_delivered_kg",
+    "net_wt_kg": "opening_delivered_kg", "delivered_kg": "opening_delivered_kg",
+    # Variance is always recomputed from potential - delivered wherever
+    # it's shown (export, dashboard, farmer list) rather than stored, so a
+    # Variance column already present in a re-uploaded export is harmless
+    # and simply ignored - it'll be right again the moment Net Weight is.
 }
 
 
@@ -76,7 +88,10 @@ def _upload_template(event):
     deny = hu.require_role(event, ADMIN_ONLY)
     if deny:
         return deny
-    key = "farmer_master_data_template.xlsx"
+    # v2: adds the optional "Net Weight (Kg)" column - bumped so a stale
+    # v1 object already cached in S3 from before this column existed
+    # doesn't keep being served as-is.
+    key = "farmer_master_data_template_v2.xlsx"
     try:
         _s3.head_object(Bucket=TEMPLATES_BUCKET, Key=key)
     except _s3.exceptions.ClientError:
@@ -85,9 +100,14 @@ def _upload_template(event):
         ws.title = "Farmers"
         ws.append(["Farmer Code", "Farmer Full name", "Farmer id", "Gender", "Date of birth",
                    "Phone number", "NIN", "Community Name", "Num plots", "Total Farm Size Mapped (Ha)",
-                   "Potential Volume"])
+                   "Potential Volume", "Net Weight (Kg)"])
         ws.append(["JIM-OD-OS-14-0002", "Chinedu Okafor", 1473737, "M", "1985-04-12",
-                   "08012345678", "12345678901", "Agbor Community", 2, 3.5, 2100])
+                   "08012345678", "12345678901", "Agbor Community", 2, 3.5, 2100, 0])
+        ws.append([])
+        ws.append(["Net Weight (Kg) is optional - fill it in only if a farmer already has delivery "
+                    "history from before you started using this system (e.g. a register you tracked "
+                    "manually, or a previous export from here). Leave it at 0, or leave the column "
+                    "out entirely, for a farmer with no prior delivery history."])
         buf = io.BytesIO()
         wb.save(buf)
         _s3.put_object(
@@ -133,6 +153,7 @@ def _upload_master_data(event, lba_id):
     for i, name in enumerate(header):
         if name:
             col_idx.setdefault(name, i)
+    has_net_weight = "opening_delivered_kg" in col_idx
 
     inserted, updated, skipped = 0, 0, 0
     with db.get_conn() as conn:
@@ -167,7 +188,7 @@ def _upload_master_data(event, lba_id):
                 farmer_uid = str(farmer_uid).strip()
 
             existing = conn.execute(
-                "SELECT 1 FROM farmers WHERE lba_id=%s AND farmer_code=%s", (lba_id, code)
+                "SELECT id FROM farmers WHERE lba_id=%s AND farmer_code=%s", (lba_id, code)
             ).fetchone()
             params = (
                 full_name,
@@ -182,21 +203,59 @@ def _upload_master_data(event, lba_id):
                 float(val("potential_volume_kg", 0) or 0),
             )
             if existing:
-                conn.execute(
-                    """UPDATE farmers SET full_name=%s, farmer_uid=%s, gender=%s, date_of_birth=%s,
-                       phone_number=%s, nin=%s, community=%s, num_plots=%s, farm_size_ha=%s,
-                       potential_volume_kg=%s, updated_at=now()
-                       WHERE lba_id=%s AND farmer_code=%s""",
-                    params + (lba_id, code),
-                )
+                if has_net_weight:
+                    # The uploaded Net Weight is a TOTAL-delivered-to-date
+                    # figure (that's what it means in the yield-monitoring
+                    # export this same column comes from), not an addend -
+                    # so back it out against whatever this farmer already
+                    # has recorded through accepted lots, rather than
+                    # setting opening_delivered_kg to the raw figure. That
+                    # way re-uploading a later export of a farmer who has
+                    # since had real lots accepted doesn't double-count
+                    # those lots: opening + lot_sum still equals the
+                    # uploaded total.
+                    lot_sum = conn.execute(
+                        """SELECT COALESCE(SUM(a.allocated_volume_kg), 0) s FROM lot_allocations a
+                           JOIN lots l ON l.id = a.lot_id
+                           WHERE a.farmer_id=%s AND l.status='accepted'""",
+                        (existing["id"],),
+                    ).fetchone()["s"]
+                    net_weight = float(val("opening_delivered_kg", 0) or 0)
+                    opening = max(0.0, net_weight - lot_sum)
+                    conn.execute(
+                        """UPDATE farmers SET full_name=%s, farmer_uid=%s, gender=%s, date_of_birth=%s,
+                           phone_number=%s, nin=%s, community=%s, num_plots=%s, farm_size_ha=%s,
+                           potential_volume_kg=%s, opening_delivered_kg=%s, updated_at=now()
+                           WHERE lba_id=%s AND farmer_code=%s""",
+                        params + (opening, lba_id, code),
+                    )
+                else:
+                    # No Net Weight column in this file at all - leave
+                    # whatever opening balance this farmer already has
+                    # alone rather than resetting it to zero. Unlike the
+                    # other optional columns, this one feeds quota math
+                    # directly, so a routine re-upload on the plain
+                    # template (which never has this column) must not
+                    # silently erase a previously migrated register.
+                    conn.execute(
+                        """UPDATE farmers SET full_name=%s, farmer_uid=%s, gender=%s, date_of_birth=%s,
+                           phone_number=%s, nin=%s, community=%s, num_plots=%s, farm_size_ha=%s,
+                           potential_volume_kg=%s, updated_at=now()
+                           WHERE lba_id=%s AND farmer_code=%s""",
+                        params + (lba_id, code),
+                    )
                 updated += 1
             else:
+                # Brand new farmer - no lot history can possibly exist yet,
+                # so the uploaded Net Weight (if any) *is* the opening
+                # balance outright.
+                opening = max(0.0, float(val("opening_delivered_kg", 0) or 0))
                 conn.execute(
                     """INSERT INTO farmers (lba_id, farmer_code, full_name, farmer_uid, gender,
                        date_of_birth, phone_number, nin, community, num_plots,
-                       farm_size_ha, potential_volume_kg)
-                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (lba_id, code) + params,
+                       farm_size_ha, potential_volume_kg, opening_delivered_kg)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (lba_id, code) + params + (opening,),
                 )
                 inserted += 1
 
@@ -216,7 +275,8 @@ def _list(event, lba_id):
         params = (lba_id, like, like, like) if q else (lba_id,)
         rows = conn.execute(
             f"""
-            SELECT f.*, COALESCE(SUM(a.allocated_volume_kg) FILTER (WHERE l.status = 'accepted'), 0) delivered
+            SELECT f.*, f.opening_delivered_kg
+                + COALESCE(SUM(a.allocated_volume_kg) FILTER (WHERE l.status = 'accepted'), 0) delivered
             FROM farmers f
             LEFT JOIN lot_allocations a ON a.farmer_id = f.id
             LEFT JOIN lots l ON l.id = a.lot_id
@@ -245,7 +305,13 @@ def _detail(event, lba_id):
             """,
             (farmer["id"],),
         ).fetchall()
-        delivered = sum(d["allocated_volume_kg"] for d in deliveries if d["status"] == "accepted")
+        # opening_delivered_kg is whatever had already been delivered before
+        # this farmer was tracked here - carried over from a manually-kept
+        # register (or a previous export) that already had a Net Weight
+        # column filled in at upload time.
+        delivered = farmer["opening_delivered_kg"] + sum(
+            d["allocated_volume_kg"] for d in deliveries if d["status"] == "accepted"
+        )
         pending = sum(d["allocated_volume_kg"] for d in deliveries if d["status"] == "pending")
         incentives = conn.execute(
             "SELECT * FROM incentives WHERE farmer_id=%s ORDER BY incentive_date DESC, id DESC",
@@ -311,7 +377,8 @@ def _export(lba_id):
             """
             SELECT f.farmer_code, f.full_name, f.gender, f.community, f.farm_size_ha,
                    f.potential_volume_kg, f.farmer_uid, f.active,
-                   COALESCE(SUM(a.allocated_volume_kg) FILTER (WHERE l.status = 'accepted'), 0) AS delivered
+                   f.opening_delivered_kg
+                       + COALESCE(SUM(a.allocated_volume_kg) FILTER (WHERE l.status = 'accepted'), 0) AS delivered
             FROM farmers f
             LEFT JOIN lot_allocations a ON a.farmer_id = f.id
             LEFT JOIN lots l ON l.id = a.lot_id
