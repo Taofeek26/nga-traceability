@@ -23,6 +23,18 @@ export function ButtonIcon({ name, busy }: { name: string; busy: boolean }) {
   return busy ? <Spinner /> : <Icon name={name} />
 }
 
+/** Full-page placeholder for a page's first data fetch - use instead of
+ * rendering nothing (or a flash of an empty-state) while `!data`. Not for
+ * a background reload of already-loaded data. */
+export function PageLoader({ label = 'Loading…' }: { label?: string }) {
+  return (
+    <div className="page-loader">
+      <Spinner />
+      <span className="page-loader__label">{label}</span>
+    </div>
+  )
+}
+
 export function NavLink({ to, label, iconName }: { to: string; label: string; iconName: string }) {
   return (
     <RouterNavLink to={to} className={({ isActive }) => 'nav__link' + (isActive ? ' is-active' : '')} end>

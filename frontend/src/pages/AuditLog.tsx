@@ -1,5 +1,5 @@
 import { useApiGet } from '../api/useApiGet'
-import { Alert, EmptyState, PageHeader } from '../components/ui'
+import { Alert, EmptyState, PageHeader, PageLoader } from '../components/ui'
 
 interface AuditEntry {
   id: number
@@ -26,8 +26,10 @@ const ACTION_LABELS: Record<string, string> = {
 }
 
 export default function AuditLog() {
-  const { data, error } = useApiGet<{ entries: AuditEntry[] }>('/audit-log')
+  const { data, error, loading } = useApiGet<{ entries: AuditEntry[] }>('/audit-log')
   const entries = data?.entries ?? []
+
+  if (loading && !data) return <PageLoader />
 
   return (
     <>

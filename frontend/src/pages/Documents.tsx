@@ -1,7 +1,7 @@
 import { useRef, useState, type DragEvent, type FormEvent } from 'react'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
-import { Alert, ButtonIcon, EmptyState, Icon, PageHeader } from '../components/ui'
+import { Alert, ButtonIcon, EmptyState, Icon, PageHeader, PageLoader } from '../components/ui'
 
 interface Doc {
   id: number
@@ -21,7 +21,7 @@ function formatSize(bytes: number | null): string {
 }
 
 export default function Documents() {
-  const { data, error: loadError, reload } = useApiGet<{ documents: Doc[] }>('/documents')
+  const { data, error: loadError, loading, reload } = useApiGet<{ documents: Doc[] }>('/documents')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [busyId, setBusyId] = useState<number | null>(null)
@@ -90,6 +90,8 @@ export default function Documents() {
   }
 
   const docs = data?.documents ?? []
+
+  if (loading && !data) return <PageLoader />
 
   return (
     <>

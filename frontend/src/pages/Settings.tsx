@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
-import { Alert, ButtonIcon, PageHeader } from '../components/ui'
+import { Alert, ButtonIcon, PageHeader, PageLoader } from '../components/ui'
 
 interface SettingsResponse {
   premium_rate_per_kg: string
@@ -34,7 +34,7 @@ export default function Settings() {
   }
 
   if (loadError) return <Alert message={loadError} kind="error" />
-  if (!data) return <p className="text-muted">Loading…</p>
+  if (!data) return <PageLoader />
 
   return (
     <>

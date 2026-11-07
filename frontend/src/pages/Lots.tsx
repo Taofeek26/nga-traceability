@@ -1,6 +1,6 @@
 import { useApiGet } from '../api/useApiGet'
 import { useAuth } from '../context/AuthContext'
-import { Alert, EmptyState, Icon, LotStatusBadge, PageHeader } from '../components/ui'
+import { Alert, EmptyState, Icon, LotStatusBadge, PageHeader, PageLoader } from '../components/ui'
 import { certificationLabel, formatKg } from '../components/format'
 
 interface Lot {
@@ -18,9 +18,11 @@ interface Lot {
 
 export default function Lots() {
   const { user } = useAuth()
-  const { data, error } = useApiGet<{ lots: Lot[] }>('/lots')
+  const { data, error, loading } = useApiGet<{ lots: Lot[] }>('/lots')
   const lots = data?.lots ?? []
   const canCreate = user?.role === 'admin' || user?.role === 'to'
+
+  if (loading && !data) return <PageLoader />
 
   return (
     <>

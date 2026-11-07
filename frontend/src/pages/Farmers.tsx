@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useApiGet } from '../api/useApiGet'
 import { useAuth } from '../context/AuthContext'
-import { Alert, Avatar, EmptyState, FarmerStatusBadge, Icon, MiniMeter, PageHeader } from '../components/ui'
+import { Alert, Avatar, EmptyState, FarmerStatusBadge, Icon, MiniMeter, PageHeader, PageLoader } from '../components/ui'
 import { formatKg } from '../components/format'
 
 interface Farmer {
@@ -25,7 +25,7 @@ export default function Farmers() {
   const q = params.get('q') || ''
   const [search, setSearch] = useState(q)
 
-  const { data, error } = useApiGet<FarmersResponse>(`/farmers?q=${encodeURIComponent(q)}`, [q])
+  const { data, error, loading } = useApiGet<FarmersResponse>(`/farmers?q=${encodeURIComponent(q)}`, [q])
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -33,6 +33,8 @@ export default function Farmers() {
   }
 
   const farmers = data?.farmers ?? []
+
+  if (loading && !data) return <PageLoader />
 
   return (
     <>

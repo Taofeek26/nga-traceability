@@ -20,6 +20,24 @@
   flex-shrink: 0;
 }
 
+/* Full-page loader — a page's first data fetch, while there's nothing to
+   show yet. Bigger than the inline button spinner via font-size, since
+   .spinner sizes itself in em. */
+.page-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-10) 0;
+  font-size: 28px;
+  color: var(--gold);
+}
+.page-loader__label {
+  font-size: var(--text-sm);
+  color: var(--taupe);
+}
+
 /* --------------------------------------------------------------------------
    1. Base / reset
    -------------------------------------------------------------------------- */

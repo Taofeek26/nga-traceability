@@ -9,7 +9,7 @@ Globals:
   Function:
     Runtime: python3.12
     Architectures: [arm64]
-    MemorySize: 256
+    MemorySize: 512
     Timeout: 15
     Layers: [!Ref CommonLayer]
     VpcConfig:
@@ -307,6 +307,7 @@ Resources:
             FunctionPayloadType: REQUEST
             Identity:
               Headers: [Authorization]
+              ReauthorizeEvery: 300
             AuthorizerPayloadFormatVersion: '2.0'
             EnableSimpleResponses: true
         DefaultAuthorizer: JwtAuthorizer
@@ -328,7 +329,7 @@ Resources:
     Properties:
       CodeUri: src/security/jwt_authorizer/
       Handler: app.lambda_handler
-      MemorySize: 128
+      MemorySize: 256
       Timeout: 5
       Policies:
         - Statement:

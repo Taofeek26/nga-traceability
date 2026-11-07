@@ -1,23 +1,30 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
 import RequireRole from './components/RequireRole'
+import { PageLoader } from './components/ui'
 import Login from './pages/Login'
+
+// Each page is its own chunk, fetched on first visit instead of all being
+// in the one bundle the Dashboard has to wait on - the Dashboard route
+// stays eager since it's the first thing almost every session loads.
 import Dashboard from './pages/Dashboard'
-import Farmers from './pages/Farmers'
-import FarmerDetail from './pages/FarmerDetail'
-import Lots from './pages/Lots'
-import NewLot from './pages/NewLot'
-import LotResult from './pages/LotResult'
-import Settings from './pages/Settings'
-import Users from './pages/Users'
-import Upload from './pages/Upload'
-import Documents from './pages/Documents'
-import AuditLog from './pages/AuditLog'
-import Profile from './pages/Profile'
+const Farmers = lazy(() => import('./pages/Farmers'))
+const FarmerDetail = lazy(() => import('./pages/FarmerDetail'))
+const Lots = lazy(() => import('./pages/Lots'))
+const NewLot = lazy(() => import('./pages/NewLot'))
+const LotResult = lazy(() => import('./pages/LotResult'))
+const Settings = lazy(() => import('./pages/Settings'))
+const Users = lazy(() => import('./pages/Users'))
+const Upload = lazy(() => import('./pages/Upload'))
+const Documents = lazy(() => import('./pages/Documents'))
+const AuditLog = lazy(() => import('./pages/AuditLog'))
+const Profile = lazy(() => import('./pages/Profile'))
 
 export default function App() {
   return (
+    <Suspense fallback={<PageLoader />}>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
@@ -43,5 +50,6 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </Suspense>
   )
 }

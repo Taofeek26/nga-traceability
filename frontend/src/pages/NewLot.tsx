@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
-import { Alert, Avatar, ButtonIcon, Icon, PageHeader } from '../components/ui'
+import { Alert, Avatar, ButtonIcon, Icon, PageHeader, PageLoader } from '../components/ui'
 
 interface EligibilityResponse {
   n_eligible: number
@@ -22,7 +22,7 @@ function randomSuggestedDate(): string {
 
 export default function NewLot() {
   const navigate = useNavigate()
-  const { data, error: loadError } = useApiGet<EligibilityResponse>('/lots/eligibility')
+  const { data, error: loadError, loading } = useApiGet<EligibilityResponse>('/lots/eligibility')
   const [lotDate] = useState(randomSuggestedDate)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -84,6 +84,8 @@ export default function NewLot() {
       setBusy(false)
     }
   }
+
+  if (loading && !data) return <PageLoader />
 
   return (
     <>

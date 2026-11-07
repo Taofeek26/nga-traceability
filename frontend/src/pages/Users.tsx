@@ -2,7 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { Alert, Avatar, ButtonIcon, Icon, PageHeader, Spinner } from '../components/ui'
+import { Alert, Avatar, ButtonIcon, Icon, PageHeader, PageLoader, Spinner } from '../components/ui'
 
 interface TeamMember {
   id: number
@@ -65,7 +65,7 @@ export default function Users() {
   }
 
   if (loadError && !data) return <Alert message={loadError} kind="error" />
-  if (!data) return <p className="text-muted">Loading…</p>
+  if (!data) return <PageLoader />
 
   return (
     <>

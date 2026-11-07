@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { Alert, Avatar, ButtonIcon, Icon, LotStatusBadge } from '../components/ui'
+import { Alert, Avatar, ButtonIcon, Icon, LotStatusBadge, PageLoader } from '../components/ui'
 import { CERTIFICATIONS, formatKg } from '../components/format'
 
 interface Lot {
@@ -94,7 +94,7 @@ export default function LotResult() {
   }
 
   if (error && !data) return <Alert message={error} kind="error" />
-  if (!data) return <p className="text-muted">Loading…</p>
+  if (!data) return <PageLoader />
 
   const { lot, rows, reviewer } = data
   const canReview = user ? ROLES_CAN_REVIEW_LOT.has(user.role) : false

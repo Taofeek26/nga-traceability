@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { Alert, Avatar, ButtonIcon, EmptyState, FarmerStatusBadge, Icon, LotStatusBadge, PageHeader, ProgressBar } from '../components/ui'
+import { Alert, Avatar, ButtonIcon, EmptyState, FarmerStatusBadge, Icon, LotStatusBadge, PageHeader, PageLoader, ProgressBar } from '../components/ui'
 import { formatKg, formatNaira } from '../components/format'
 
 interface Farmer {
@@ -93,7 +93,7 @@ export default function FarmerDetail() {
   }
 
   if (error && !data) return <Alert message={error} kind="error" />
-  if (!data) return <p className="text-muted">Loading…</p>
+  if (!data) return <PageLoader />
 
   const { farmer: f, deliveries, delivered, pending, remaining, incentives, premium_rate, premium_accrued, other_incentives, total_entitlement } = data
   const pct = f.potential_volume_kg > 0 ? (delivered / f.potential_volume_kg) * 100 : 0

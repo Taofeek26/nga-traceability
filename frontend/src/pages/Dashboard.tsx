@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, ApiError } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { Alert, EmptyState, Icon, LotStatusBadge, PageHeader, ProgressBar, StatTile, Avatar } from '../components/ui'
+import { Alert, EmptyState, Icon, LotStatusBadge, PageHeader, PageLoader, ProgressBar, StatTile, Avatar } from '../components/ui'
 import { formatKg } from '../components/format'
 
 interface Lot {
@@ -45,7 +45,7 @@ export default function Dashboard() {
   }, [])
 
   if (error) return <Alert message={error} kind="error" />
-  if (!data) return <p className="text-muted">Loading…</p>
+  if (!data) return <PageLoader />
 
   const usedPct = data.potential > 0 ? (data.delivered / data.potential) * 100 : 0
   const role = user?.role
