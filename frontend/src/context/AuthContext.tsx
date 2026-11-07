@@ -14,7 +14,6 @@ interface AuthState {
   user: SessionUser | null
   ready: boolean
   login: (email: string, password: string) => Promise<void>
-  signup: (name: string, email: string, password: string, confirmPassword: string) => Promise<void>
   logout: () => void
 }
 
@@ -45,13 +44,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persist(data.token, data.user)
   }
 
-  async function signup(name: string, email: string, password: string, confirm_password: string) {
-    const data = await api.post<{ token: string; user: SessionUser }>('/auth/signup', {
-      name, email, password, confirm_password,
-    })
-    persist(data.token, data.user)
-  }
-
   function logout() {
     setToken(null)
     localStorage.removeItem(USER_KEY)
@@ -59,7 +51,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, ready, login, signup, logout }}>
+    <AuthContext.Provider value={{ user, ready, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

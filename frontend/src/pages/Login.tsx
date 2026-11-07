@@ -31,7 +31,7 @@ export default function Login() {
     <AuthShell
       heading="Welcome back"
       desc="Log in to your LBA's account."
-      switchLink={<>No account yet? <a href="/signup">Register your LBA</a></>}
+      switchLink="No account yet? Contact your company admin."
     >
       {error && <Alert message={error} kind="error" />}
       <form onSubmit={onSubmit}>

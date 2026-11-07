@@ -3,7 +3,6 @@ import AppShell from './components/AppShell'
 import ProtectedRoute from './components/ProtectedRoute'
 import RequireRole from './components/RequireRole'
 import Login from './pages/Login'
-import Signup from './pages/Signup'
 import Dashboard from './pages/Dashboard'
 import Farmers from './pages/Farmers'
 import FarmerDetail from './pages/FarmerDetail'
@@ -21,7 +20,6 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/signup" element={<Signup />} />
       <Route
         path="/"
         element={

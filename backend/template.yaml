@@ -349,9 +349,6 @@ Resources:
                 - !GetAtt AuroraCluster.MasterUserSecret.SecretArn
                 - !Ref JwtSigningKeySecret
       Events:
-        Signup:
-          Type: HttpApi
-          Properties: {ApiId: !Ref HttpApi, Path: /auth/signup, Method: POST, Auth: {Authorizer: NONE}}
         Login:
           Type: HttpApi
           Properties: {ApiId: !Ref HttpApi, Path: /auth/login, Method: POST, Auth: {Authorizer: NONE}}
