@@ -6,3 +6,7 @@ data/app.db
 .vercel
 .env*
 .DS_Store
+credentials/
+backend/.aws-sam/
+frontend/node_modules/
+frontend/dist/

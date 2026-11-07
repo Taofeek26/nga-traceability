@@ -1,0 +1,942 @@
+{
+  "version": "1.0.0",
+  "metadata": {
+    "source": "Nigeria LBA Level Traceability — Backend Architecture (no-framework Lambda-direct)",
+    "project": "Nigeria LBA Level Traceability",
+    "client": "Internal — multi-tenant SaaS for Licensed Buying Agents",
+    "createdAt": "2026-11-07T00:00:00Z",
+    "updatedAt": "2026-11-07T00:00:00Z",
+    "importedAt": "2026-11-07T00:00:00Z",
+    "originalFormat": "json",
+    "totalRequirements": 24,
+    "totalResources": 19,
+    "lastValidated": "2026-11-07",
+    "schemaType": "LayerOrientedResourceMap",
+    "region": "us-east-1",
+    "architectureNote": "Every Lambda below is a plain Python handler wired directly to API Gateway's Lambda proxy integration. No web framework (FastAPI, Flask, Mangum) runs inside any function — each handler reads event['rawPath'] / event['requestContext']['http']['method'] and dispatches internally. This was an explicit correction to an earlier FastAPI+Mangum draft.",
+    "resourcesByType": {
+      "lambda": 7,
+      "rds": 1,
+      "s3": 3,
+      "apigateway": 1,
+      "secretsmanager": 2,
+      "vpc": 1,
+      "iam": 1,
+      "cloudwatchloggroup": 1,
+      "cloudwatchalarm": 1,
+      "sns": 1
+    },
+    "changeLog": [
+      {
+        "version": "1.0.0",
+        "date": "2026-11-07",
+        "changes": [
+          "Initial release — replaces the earlier FastAPI+Mangum / App Runner draft (see html/frontend-backend-split-plan.html) with direct Lambda-to-API-Gateway integrations, Aurora PostgreSQL Serverless v2, and the existing VPC (see openQuestions below)."
+        ]
+      }
+    ],
+    "openQuestions": [
+      "Whether any other already-provisioned resource (an existing Secrets Manager secret, an existing S3 bucket, an existing IAM boundary policy) should be referenced instead of the new ones defined here."
+    ],
+    "vpcDecisionNote": "An AWS CLI sweep of the personal account (294983767092) across 6 regions found no custom-tagged VPC — only the standard AWS default VPC per region, already in light use by unrelated projects (dev-rabbithub-*, wynn-booking-demo-*, bet-hope-*), including a security group (rabbithub-db-sg) open to 0.0.0.0/0 on 5432 that was explicitly not reused. Decision: provision a new, dedicated VPC for this project (LBA-Prod-Security-VPC below), rather than attach to the shared default VPC.",
+    "costAnalysis": {
+      "monthlyTotal": 71,
+      "currency": "USD",
+      "basis": "Pilot scale (1-5 LBAs), per html/cost-estimation.html's usage assumptions",
+      "breakdown": {
+        "compute": {
+          "lambda": 3.0,
+          "description": "7 functions (6 domain services + 1 authorizer), low memory (256-512MB), well within the 1M-request/400,000 GB-s monthly free tier at pilot volume"
+        },
+        "api": {
+          "apiGateway": 0.05,
+          "description": "HTTP API (not REST API — cheaper, native JWT-shape support), ~50K requests/month at $1.00/million"
+        },
+        "database": {
+          "aurora": 47.0,
+          "description": "Aurora PostgreSQL Serverless v2, floor of 0.5 ACU sustained (≈$43.80/mo) + 20GB storage + I/O. This is the non-zero idle floor already flagged and accepted — v2 does not pause to literal $0 the way v1 could."
+        },
+        "storage": {
+          "s3": 2.0,
+          "description": "3 buckets (uploads, exports, templates), low volume, 7-day lifecycle expiry on generated exports"
+        },
+        "networking": {
+          "natGateway": 0.0,
+          "vpcEndpoints": 14.6,
+          "description": "No NAT Gateway — this app makes no outbound internet calls, so two interface VPC endpoints (Secrets Manager, CloudWatch Logs) plus a free S3 gateway endpoint are all that's needed for Lambdas in private subnets to reach AWS services. Reuses the existing VPC rather than provisioning a new one."
+        },
+        "security": {
+          "secretsManager": 0.8,
+          "description": "2 secrets (Aurora credentials, JWT signing key) at $0.40/secret/month"
+        },
+        "messaging": {
+          "sns": 0.1,
+          "description": "1 topic for ops alerts, negligible at this volume"
+        },
+        "monitoring": {
+          "cloudWatch": 4.0,
+          "description": "7 Lambda log groups (aggregated below) + 1 error-rate alarm"
+        }
+      },
+      "scalingProjections": [
+        { "lbas": 5, "monthlyCost": 71 },
+        { "lbas": 25, "monthlyCost": 240 },
+        { "lbas": 100, "monthlyCost": 620 }
+      ],
+      "comparisonNote": "Materially cheaper than the App Runner/Fargate + RDS figures in html/cost-estimation.html at every tier — Lambda's per-request billing has near-zero idle cost for this app's bursty harvest-season traffic, and reusing the existing VPC with endpoint-only networking avoids a ~$33/month NAT Gateway entirely. html/cost-estimation.html should be revised to point here once this architecture is confirmed."
+    },
+    "totalConnectionEntries": 41,
+    "totalUniqueConnections": 24
+  },
+  "namingConvention": {
+    "pattern": "LBA-{Environment}-{Layer}-{Function}",
+    "environment": ["Prod", "Dev", "Test"],
+    "layers": ["Core", "Data", "Comm", "Security"],
+    "exceptions": {
+      "s3Buckets": "lba-{env}-{purpose}-{accountid} (lowercase, AWS constraint)",
+      "cloudWatchLogGroups": "/aws/lambda/{FunctionName} (AWS-managed prefix)",
+      "auroraCluster": "lba-{env}-db (lowercase)",
+      "apiGateway": "LBA-{Environment}-Comm-HttpApi"
+    }
+  },
+  "layers": [
+    {
+      "id": 1,
+      "name": "Core Logic & Business Operations",
+      "description": "Auth, farmer register management, lot allocation/quota logic, dashboard aggregation, settings — the direct-Lambda replacement for app.py's route handlers"
+    },
+    {
+      "id": 2,
+      "name": "Data Persistence & Storage",
+      "description": "Aurora PostgreSQL Serverless v2 and the S3 buckets used for uploads, generated exports, and the static upload template"
+    },
+    {
+      "id": 3,
+      "name": "Communication & API",
+      "description": "The single HTTP API Gateway entry point the React/TypeScript frontend calls"
+    },
+    {
+      "id": 4,
+      "name": "Security & Infrastructure",
+      "description": "JWT authorization, secrets, the existing VPC this stack attaches to, IAM roles, and operational monitoring"
+    }
+  ],
+  "services": {
+    "LBA-Prod-Core-AuthService": {
+      "id": "LBA-Prod-Core-AuthService",
+      "name": "Auth Service",
+      "type": "lambda",
+      "category": "compute",
+      "layer": 1,
+      "consolidates": [
+        "SignupHandler",
+        "LoginHandler",
+        "LogoutHandler",
+        "JwtIssuer"
+      ],
+      "optional": false,
+      "metadata": {
+        "type": "Lambda Function",
+        "purpose": "Create LBA accounts, authenticate users, and issue JWTs — no framework, plain dict-in/dict-out handler",
+        "description": "Replaces app.py's /signup and /login POST handlers. Hashes passwords with bcrypt exactly as auth.py does today, but issues a signed JWT in the response body instead of setting a cookie (the frontend now lives on a different origin — see html/frontend-backend-split-plan.html §7.1). The GET /signup and GET /login routes that only rendered an empty form no longer exist on the backend at all; the React frontend renders those forms itself.",
+        "iam_role": "LBA-Prod-Security-AuthService-ExecutionRole"
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /auth/signup" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /auth/login" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /auth/logout" }
+        ],
+        "outbound": [
+          { "target": "lba-prod-db", "label": "INSERT/SELECT lbas, users (signup, login verification)" },
+          { "target": "LBA-Prod-Security-DatabaseSecret", "label": "GetSecretValue" },
+          { "target": "LBA-Prod-Security-JwtSigningKey", "label": "GetSecretValue (sign new tokens)" }
+        ]
+      },
+      "requirements": ["LBA-REQ-001", "LBA-REQ-002"],
+      "systems": ["Authentication & Access"],
+      "definition": {
+        "functionName": "LBA-Prod-Core-AuthService",
+        "handler": "app.lambda_handler",
+        "runtime": "python3.12",
+        "architecture": "arm64",
+        "memorySize": 256,
+        "timeout": 10,
+        "codeLocation": "backend/src/core/auth_service/",
+        "environmentVariables": {
+          "LOG_LEVEL": "INFO",
+          "DB_SECRET_NAME": "LBA-prod-DatabaseCredentials",
+          "DB_HOST": "${AuroraClusterEndpoint}",
+          "DB_NAME": "lba_production",
+          "DB_PORT": "5432",
+          "JWT_SECRET_NAME": "LBA-prod-JwtSigningKey",
+          "JWT_MAX_AGE_SECONDS": "2592000"
+        },
+        "tracing": "Active",
+        "triggers": [
+          { "type": "HttpApi", "path": "/auth/signup", "method": "POST", "authorizer": "none" },
+          { "type": "HttpApi", "path": "/auth/login", "method": "POST", "authorizer": "none" },
+          { "type": "HttpApi", "path": "/auth/logout", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" }
+        ],
+        "vpcConfig": {
+          "subnetIds": ["PrivateSubnet1", "PrivateSubnet2"],
+          "securityGroupIds": ["LambdaSecurityGroup"]
+        },
+        "policies": [
+          {
+            "SecretsAccess": {
+              "actions": ["secretsmanager:GetSecretValue"],
+              "resource": "LBA-prod-DatabaseCredentials"
+            }
+          },
+          {
+            "JwtSecretAccess": {
+              "actions": ["secretsmanager:GetSecretValue"],
+              "resource": "LBA-prod-JwtSigningKey"
+            }
+          }
+        ]
+      }
+    },
+    "LBA-Prod-Core-UserAdminService": {
+      "id": "LBA-Prod-Core-UserAdminService",
+      "name": "User Admin Service",
+      "type": "lambda",
+      "category": "compute",
+      "layer": 1,
+      "consolidates": ["UsersListHandler", "UserCreateHandler", "UserToggleActiveHandler"],
+      "optional": false,
+      "metadata": {
+        "type": "Lambda Function",
+        "purpose": "Admin-only management of staff accounts within one LBA tenant",
+        "description": "Replaces app.py's /users GET+POST and /users/{id}/toggle-active. The admin-only check moves from a server-rendered redirect to: (1) the JWT authorizer confirming a valid session, (2) this function itself re-checking role=='admin' from the token claims before touching the users table — never trusting a client-side-only guard.",
+        "iam_role": "LBA-Prod-Security-UserAdminService-ExecutionRole"
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /users" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /users" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /users/{id}/toggle-active" }
+        ],
+        "outbound": [
+          { "target": "lba-prod-db", "label": "SELECT/INSERT/UPDATE users (scoped to lba_id from JWT claims)" },
+          { "target": "LBA-Prod-Security-DatabaseSecret", "label": "GetSecretValue" }
+        ]
+      },
+      "requirements": ["LBA-REQ-003"],
+      "systems": ["Platform Administration"],
+      "definition": {
+        "functionName": "LBA-Prod-Core-UserAdminService",
+        "handler": "app.lambda_handler",
+        "runtime": "python3.12",
+        "architecture": "arm64",
+        "memorySize": 256,
+        "timeout": 10,
+        "codeLocation": "backend/src/core/user_admin_service/",
+        "environmentVariables": {
+          "LOG_LEVEL": "INFO",
+          "DB_SECRET_NAME": "LBA-prod-DatabaseCredentials",
+          "DB_HOST": "${AuroraClusterEndpoint}",
+          "DB_NAME": "lba_production",
+          "DB_PORT": "5432"
+        },
+        "tracing": "Active",
+        "triggers": [
+          { "type": "HttpApi", "path": "/users", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/users", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/users/{id}/toggle-active", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" }
+        ],
+        "vpcConfig": {
+          "subnetIds": ["PrivateSubnet1", "PrivateSubnet2"],
+          "securityGroupIds": ["LambdaSecurityGroup"]
+        },
+        "policies": [
+          { "SecretsAccess": { "actions": ["secretsmanager:GetSecretValue"], "resource": "LBA-prod-DatabaseCredentials" } }
+        ]
+      }
+    },
+    "LBA-Prod-Core-FarmerRegisterService": {
+      "id": "LBA-Prod-Core-FarmerRegisterService",
+      "name": "Farmer Register Service",
+      "type": "lambda",
+      "category": "compute",
+      "layer": 1,
+      "consolidates": [
+        "UploadTemplateLinker",
+        "MasterDataUploadHandler",
+        "FarmersListHandler",
+        "FarmerDetailHandler",
+        "IncentiveHandler",
+        "FarmerToggleActiveHandler",
+        "FarmerExportHandler",
+        "DataClearHandler"
+      ],
+      "optional": false,
+      "metadata": {
+        "type": "Lambda Function",
+        "purpose": "Everything touching the farmer register: bulk upload, list/search, per-farmer detail and incentives, and the .xlsx export",
+        "description": "Replaces app.py's /upload, /upload/template, /farmers, /farmers/{code}, /farmers/{code}/incentives, /farmers/{code}/toggle-active, /farmers/export, and /data/clear. Parses the uploaded .xlsx with openpyxl exactly as today (same HEADER_ALIASES/_norm_header logic). Never returns a generated export file inline — writes it to the exports bucket and returns a short-lived presigned GET URL instead, per the API Gateway payload-size reasoning in html/frontend-backend-split-plan.html §7.2.",
+        "iam_role": "LBA-Prod-Security-FarmerRegisterService-ExecutionRole"
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /farmers/upload-template" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /farmers/upload" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /farmers" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /farmers/{code}" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /farmers/{code}/incentives" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /farmers/{code}/toggle-active" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /farmers/export" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /farmers/clear-all" }
+        ],
+        "outbound": [
+          { "target": "lba-prod-db", "label": "SELECT/INSERT/UPDATE farmers, incentives (scoped to lba_id)" },
+          { "target": "lba-prod-templates-${AccountId}", "label": "GeneratePresignedUrl (GetObject — static upload template)" },
+          { "target": "lba-prod-exports-${AccountId}", "label": "PutObject (generated farmer export) + GeneratePresignedUrl (GetObject)" },
+          { "target": "LBA-Prod-Security-DatabaseSecret", "label": "GetSecretValue" }
+        ]
+      },
+      "requirements": ["LBA-REQ-004", "LBA-REQ-005", "LBA-REQ-006"],
+      "systems": ["Farmer Management"],
+      "definition": {
+        "functionName": "LBA-Prod-Core-FarmerRegisterService",
+        "handler": "app.lambda_handler",
+        "runtime": "python3.12",
+        "architecture": "arm64",
+        "memorySize": 512,
+        "timeout": 30,
+        "codeLocation": "backend/src/core/farmer_register_service/",
+        "environmentVariables": {
+          "LOG_LEVEL": "INFO",
+          "DB_SECRET_NAME": "LBA-prod-DatabaseCredentials",
+          "DB_HOST": "${AuroraClusterEndpoint}",
+          "DB_NAME": "lba_production",
+          "DB_PORT": "5432",
+          "TEMPLATES_BUCKET": "lba-prod-templates-${AccountId}",
+          "EXPORTS_BUCKET": "lba-prod-exports-${AccountId}"
+        },
+        "tracing": "Active",
+        "triggers": [
+          { "type": "HttpApi", "path": "/farmers/upload-template", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/farmers/upload", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/farmers", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/farmers/{code}", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/farmers/{code}/incentives", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/farmers/{code}/toggle-active", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/farmers/export", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/farmers/clear-all", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" }
+        ],
+        "vpcConfig": {
+          "subnetIds": ["PrivateSubnet1", "PrivateSubnet2"],
+          "securityGroupIds": ["LambdaSecurityGroup"]
+        },
+        "policies": [
+          { "SecretsAccess": { "actions": ["secretsmanager:GetSecretValue"], "resource": "LBA-prod-DatabaseCredentials" } },
+          { "TemplateRead": { "actions": ["s3:GetObject"], "resource": "lba-prod-templates-${AccountId}/*" } },
+          { "ExportWrite": { "actions": ["s3:PutObject", "s3:GetObject"], "resource": "lba-prod-exports-${AccountId}/*" } }
+        ]
+      }
+    },
+    "LBA-Prod-Core-LotService": {
+      "id": "LBA-Prod-Core-LotService",
+      "name": "Lot Service",
+      "type": "lambda",
+      "category": "compute",
+      "layer": 1,
+      "consolidates": [
+        "LotsListHandler",
+        "LotEligibilityHandler",
+        "LotCreateHandler",
+        "LotDetailHandler",
+        "LotAcceptHandler",
+        "LotRejectHandler",
+        "LotExportHandler"
+      ],
+      "optional": false,
+      "metadata": {
+        "type": "Lambda Function",
+        "purpose": "Lot lifecycle: eligibility check, creation with proportional per-farmer allocation, review (accept/reject), and the delivery-slip export",
+        "description": "Replaces app.py's /lots, /lots/new (GET+POST), /lots/{id}, /lots/{id}/accept, /lots/{id}/reject, /lots/{id}/export. Carries over allocation.py's allocation logic and the per-farmer bag-count (floor of 1, derived from weight at 62.5kg/bag) and per-farmer delivered_date randomization unchanged from the current production app. The delivery-slip export is written to the exports bucket with a presigned URL, same pattern as the farmer export.",
+        "iam_role": "LBA-Prod-Security-LotService-ExecutionRole"
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /lots" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /lots/eligibility" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /lots" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /lots/{id}" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /lots/{id}/accept" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "POST /lots/{id}/reject" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /lots/{id}/export" }
+        ],
+        "outbound": [
+          { "target": "lba-prod-db", "label": "SELECT/INSERT/UPDATE lots, lot_allocations; SELECT farmers (quota + eligibility check)" },
+          { "target": "lba-prod-exports-${AccountId}", "label": "PutObject (delivery slip) + GeneratePresignedUrl (GetObject)" },
+          { "target": "LBA-Prod-Security-DatabaseSecret", "label": "GetSecretValue" }
+        ]
+      },
+      "requirements": ["LBA-REQ-007", "LBA-REQ-008", "LBA-REQ-009"],
+      "systems": ["Lot Tracking & Traceability"],
+      "definition": {
+        "functionName": "LBA-Prod-Core-LotService",
+        "handler": "app.lambda_handler",
+        "runtime": "python3.12",
+        "architecture": "arm64",
+        "memorySize": 512,
+        "timeout": 30,
+        "codeLocation": "backend/src/core/lot_service/",
+        "environmentVariables": {
+          "LOG_LEVEL": "INFO",
+          "DB_SECRET_NAME": "LBA-prod-DatabaseCredentials",
+          "DB_HOST": "${AuroraClusterEndpoint}",
+          "DB_NAME": "lba_production",
+          "DB_PORT": "5432",
+          "EXPORTS_BUCKET": "lba-prod-exports-${AccountId}",
+          "STANDARD_BAG_KG": "62.5"
+        },
+        "tracing": "Active",
+        "triggers": [
+          { "type": "HttpApi", "path": "/lots", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/lots/eligibility", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/lots", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/lots/{id}", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/lots/{id}/accept", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/lots/{id}/reject", "method": "POST", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/lots/{id}/export", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" }
+        ],
+        "vpcConfig": {
+          "subnetIds": ["PrivateSubnet1", "PrivateSubnet2"],
+          "securityGroupIds": ["LambdaSecurityGroup"]
+        },
+        "policies": [
+          { "SecretsAccess": { "actions": ["secretsmanager:GetSecretValue"], "resource": "LBA-prod-DatabaseCredentials" } },
+          { "ExportWrite": { "actions": ["s3:PutObject", "s3:GetObject"], "resource": "lba-prod-exports-${AccountId}/*" } }
+        ]
+      }
+    },
+    "LBA-Prod-Core-DashboardService": {
+      "id": "LBA-Prod-Core-DashboardService",
+      "name": "Dashboard Service",
+      "type": "lambda",
+      "category": "compute",
+      "layer": 1,
+      "consolidates": ["DashboardAggregationHandler"],
+      "optional": false,
+      "metadata": {
+        "type": "Lambda Function",
+        "purpose": "Read-only aggregation for the landing dashboard",
+        "description": "Replaces app.py's GET / handler. Pure read query across farmers/lots/lot_allocations, scoped to lba_id from the JWT claims.",
+        "iam_role": "LBA-Prod-Security-DashboardService-ExecutionRole"
+      },
+      "connections": {
+        "inbound": [{ "source": "LBA-Prod-Comm-HttpApi", "label": "GET /dashboard" }],
+        "outbound": [
+          { "target": "lba-prod-db", "label": "SELECT aggregates from farmers, lots, lot_allocations (read-only)" },
+          { "target": "LBA-Prod-Security-DatabaseSecret", "label": "GetSecretValue" }
+        ]
+      },
+      "requirements": ["LBA-REQ-010"],
+      "systems": ["Reporting & Export"],
+      "definition": {
+        "functionName": "LBA-Prod-Core-DashboardService",
+        "handler": "app.lambda_handler",
+        "runtime": "python3.12",
+        "architecture": "arm64",
+        "memorySize": 256,
+        "timeout": 10,
+        "codeLocation": "backend/src/core/dashboard_service/",
+        "environmentVariables": {
+          "LOG_LEVEL": "INFO",
+          "DB_SECRET_NAME": "LBA-prod-DatabaseCredentials",
+          "DB_HOST": "${AuroraClusterEndpoint}",
+          "DB_NAME": "lba_production",
+          "DB_PORT": "5432"
+        },
+        "tracing": "Active",
+        "triggers": [
+          { "type": "HttpApi", "path": "/dashboard", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" }
+        ],
+        "vpcConfig": {
+          "subnetIds": ["PrivateSubnet1", "PrivateSubnet2"],
+          "securityGroupIds": ["LambdaSecurityGroup"]
+        },
+        "policies": [
+          { "SecretsAccess": { "actions": ["secretsmanager:GetSecretValue"], "resource": "LBA-prod-DatabaseCredentials" } }
+        ]
+      }
+    },
+    "LBA-Prod-Core-SettingsService": {
+      "id": "LBA-Prod-Core-SettingsService",
+      "name": "Settings Service",
+      "type": "lambda",
+      "category": "compute",
+      "layer": 1,
+      "consolidates": ["SettingsGetHandler", "SettingsUpdateHandler"],
+      "optional": false,
+      "metadata": {
+        "type": "Lambda Function",
+        "purpose": "Per-tenant settings read/update",
+        "description": "Replaces app.py's /settings GET+POST (POST becomes PUT, matching REST verb conventions now that there's no HTML form to submit against).",
+        "iam_role": "LBA-Prod-Security-SettingsService-ExecutionRole"
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "GET /settings" },
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "PUT /settings" }
+        ],
+        "outbound": [
+          { "target": "lba-prod-db", "label": "SELECT/INSERT/UPDATE settings (scoped to lba_id)" },
+          { "target": "LBA-Prod-Security-DatabaseSecret", "label": "GetSecretValue" }
+        ]
+      },
+      "requirements": ["LBA-REQ-011"],
+      "systems": ["Platform Administration"],
+      "definition": {
+        "functionName": "LBA-Prod-Core-SettingsService",
+        "handler": "app.lambda_handler",
+        "runtime": "python3.12",
+        "architecture": "arm64",
+        "memorySize": 256,
+        "timeout": 10,
+        "codeLocation": "backend/src/core/settings_service/",
+        "environmentVariables": {
+          "LOG_LEVEL": "INFO",
+          "DB_SECRET_NAME": "LBA-prod-DatabaseCredentials",
+          "DB_HOST": "${AuroraClusterEndpoint}",
+          "DB_NAME": "lba_production",
+          "DB_PORT": "5432"
+        },
+        "tracing": "Active",
+        "triggers": [
+          { "type": "HttpApi", "path": "/settings", "method": "GET", "authorizer": "LBA-Prod-Security-JwtAuthorizer" },
+          { "type": "HttpApi", "path": "/settings", "method": "PUT", "authorizer": "LBA-Prod-Security-JwtAuthorizer" }
+        ],
+        "vpcConfig": {
+          "subnetIds": ["PrivateSubnet1", "PrivateSubnet2"],
+          "securityGroupIds": ["LambdaSecurityGroup"]
+        },
+        "policies": [
+          { "SecretsAccess": { "actions": ["secretsmanager:GetSecretValue"], "resource": "LBA-prod-DatabaseCredentials" } }
+        ]
+      }
+    },
+    "LBA-Prod-Security-JwtAuthorizer": {
+      "id": "LBA-Prod-Security-JwtAuthorizer",
+      "name": "JWT Request Authorizer",
+      "type": "lambda",
+      "category": "security",
+      "layer": 4,
+      "consolidates": [],
+      "optional": false,
+      "metadata": {
+        "type": "Lambda Function (API Gateway Lambda Authorizer)",
+        "purpose": "Validate the Authorization: Bearer JWT on every protected route and attach lba_id/role/user_id to the request context",
+        "description": "A custom Lambda authorizer rather than API Gateway's native JWT authorizer, because tokens are self-issued (bcrypt + signed payload, same shape as today's auth.py) rather than coming from an OIDC provider like Cognito with a JWKS endpoint. Verifies the signature and expiry, then returns an IAM policy plus the decoded claims as context, which every downstream domain Lambda reads to scope its queries by lba_id — the same tenant-isolation guarantee app.py enforces today, just checked at the API boundary instead of in-process.",
+        "iam_role": "LBA-Prod-Security-JwtAuthorizer-ExecutionRole",
+        "deploymentNote": "Unlike AWS::Serverless::Api (REST), AWS::Serverless::HttpApi does NOT auto-create the Lambda::Permission letting API Gateway invoke a custom authorizer referenced under Auth.Authorizers - every protected route 500s with no Lambda ever invoked until an explicit AWS::Lambda::Permission (Principal apigateway.amazonaws.com, SourceArn scoped to the HttpApi) is added. Found and fixed during the first real deploy to the personal AWS account."
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Comm-HttpApi", "label": "REQUEST authorizer — invoked before every protected route" }
+        ],
+        "outbound": [
+          { "target": "LBA-Prod-Security-JwtSigningKey", "label": "GetSecretValue (verify signature)" }
+        ]
+      },
+      "requirements": ["LBA-REQ-012", "LBA-REQ-013"],
+      "systems": ["Authentication & Access"],
+      "definition": {
+        "functionName": "LBA-Prod-Security-JwtAuthorizer",
+        "handler": "app.lambda_handler",
+        "runtime": "python3.12",
+        "architecture": "arm64",
+        "memorySize": 128,
+        "timeout": 5,
+        "codeLocation": "backend/src/security/jwt_authorizer/",
+        "environmentVariables": {
+          "LOG_LEVEL": "INFO",
+          "JWT_SECRET_NAME": "LBA-prod-JwtSigningKey"
+        },
+        "tracing": "Active",
+        "authorizerType": "REQUEST",
+        "authorizerResultTtl": 60,
+        "identitySource": ["$request.header.Authorization"],
+        "vpcConfig": {
+          "subnetIds": ["PrivateSubnet1", "PrivateSubnet2"],
+          "securityGroupIds": ["LambdaSecurityGroup"]
+        },
+        "policies": [
+          { "JwtSecretAccess": { "actions": ["secretsmanager:GetSecretValue"], "resource": "LBA-prod-JwtSigningKey" } }
+        ]
+      }
+    },
+    "lba-prod-db": {
+      "id": "lba-prod-db",
+      "name": "LBA Production Aurora Cluster",
+      "type": "rds",
+      "category": "database",
+      "layer": 2,
+      "metadata": {
+        "type": "Amazon Aurora PostgreSQL Serverless v2",
+        "purpose": "Primary relational database for all LBA Traceability tenants",
+        "description": "Aurora PostgreSQL Serverless v2 cluster, replacing the current Neon database per the explicit 'pay-as-you-go, not charged when idle' requirement. Scales ACUs automatically between min/max; the min floor below is a real non-zero cost even fully idle (Aurora Serverless v2 cannot pause to literal $0 — confirmed acceptable). Schema is carried over unchanged from database.py: lbas, users, farmers, lots, lot_allocations, incentives, settings. Row-level tenant isolation is enforced at the application layer today (every query filters by lba_id) and should stay that way — this cluster does not currently add Postgres Row Level Security, that would be a separate hardening step.",
+        "engine": "aurora-postgresql",
+        "engineVersion": "16.4",
+        "serverlessV2ScalingConfiguration": {
+          "minCapacity": 0.5,
+          "maxCapacity": 8
+        },
+        "multiAZ": true,
+        "storageEncrypted": true,
+        "publiclyAccessible": false,
+        "dbName": "lba_production",
+        "port": 5432,
+        "backupRetentionPeriod": 14,
+        "deletionProtection": true,
+        "existingVpc": false,
+        "subnetGroup": ["PrivateSubnet1", "PrivateSubnet2"],
+        "schema": {
+          "tables": [
+            { "name": "lbas", "description": "Tenant/organisation record", "primaryKey": "id (serial)" },
+            { "name": "users", "description": "Staff accounts per tenant (admin/to/lba roles)", "primaryKey": "id (serial)" },
+            { "name": "farmers", "description": "Farmer register per tenant", "primaryKey": "id (serial)", "indexes": ["UNIQUE (lba_id, farmer_code)"] },
+            { "name": "lots", "description": "Recorded deliveries awaiting/past review", "primaryKey": "id (serial)" },
+            { "name": "lot_allocations", "description": "Per-farmer receipt rows within a lot, including per-farmer delivered_date", "primaryKey": "id (serial)" },
+            { "name": "incentives", "description": "Per-farmer incentive payments", "primaryKey": "id (serial)" },
+            { "name": "settings", "description": "Per-tenant key/value settings", "primaryKey": "(lba_id, key)" }
+          ]
+        }
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Core-AuthService", "label": "read/write" },
+          { "source": "LBA-Prod-Core-UserAdminService", "label": "read/write" },
+          { "source": "LBA-Prod-Core-FarmerRegisterService", "label": "read/write" },
+          { "source": "LBA-Prod-Core-LotService", "label": "read/write" },
+          { "source": "LBA-Prod-Core-DashboardService", "label": "read" },
+          { "source": "LBA-Prod-Core-SettingsService", "label": "read/write" }
+        ],
+        "outbound": []
+      },
+      "requirements": ["LBA-REQ-014", "LBA-REQ-015"],
+      "systems": ["Farmer Management", "Lot Tracking & Traceability", "Authentication & Access", "Platform Administration"]
+    },
+    "lba-prod-uploads-${AccountId}": {
+      "id": "lba-prod-uploads-${AccountId}",
+      "name": "Farmer Upload Staging Bucket",
+      "type": "s3",
+      "category": "storage",
+      "layer": 2,
+      "metadata": {
+        "type": "S3 Bucket",
+        "purpose": "Transient staging for uploaded master-data .xlsx files during parsing",
+        "description": "Receives the raw uploaded file before FarmerRegisterService parses it. Short lifecycle (parsed and discarded within the same request in the common case; kept briefly for retry/audit).",
+        "capabilities": ["Server-side encryption", "7-day lifecycle expiry"]
+      },
+      "connections": {
+        "inbound": [{ "source": "LBA-Prod-Core-FarmerRegisterService", "label": "PutObject (staged upload)" }],
+        "outbound": []
+      },
+      "requirements": ["LBA-REQ-005"],
+      "systems": ["Farmer Management"],
+      "definition": {
+        "bucketName": "lba-prod-uploads-${AccountId}",
+        "versioning": false,
+        "encryption": { "sseAlgorithm": "AES256" },
+        "lifecycleConfiguration": {
+          "rules": [{ "id": "ExpireStagedUploads", "status": "Enabled", "expiration": { "days": 7 } }]
+        },
+        "blockPublicAccess": true
+      }
+    },
+    "lba-prod-exports-${AccountId}": {
+      "id": "lba-prod-exports-${AccountId}",
+      "name": "Generated Exports Bucket",
+      "type": "s3",
+      "category": "storage",
+      "layer": 2,
+      "metadata": {
+        "type": "S3 Bucket",
+        "purpose": "Generated farmer-register and lot delivery-slip .xlsx exports, served via presigned URL",
+        "description": "FarmerRegisterService and LotService both write here and return a short-lived presigned GetObject URL rather than streaming the file through API Gateway (payload-size reasoning in html/frontend-backend-split-plan.html §7.2).",
+        "capabilities": ["Server-side encryption", "7-day lifecycle expiry", "Presigned URL downloads"]
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Core-FarmerRegisterService", "label": "PutObject + GeneratePresignedUrl" },
+          { "source": "LBA-Prod-Core-LotService", "label": "PutObject + GeneratePresignedUrl" }
+        ],
+        "outbound": []
+      },
+      "requirements": ["LBA-REQ-006", "LBA-REQ-009"],
+      "systems": ["Farmer Management", "Lot Tracking & Traceability", "Reporting & Export"],
+      "definition": {
+        "bucketName": "lba-prod-exports-${AccountId}",
+        "versioning": false,
+        "encryption": { "sseAlgorithm": "AES256" },
+        "lifecycleConfiguration": {
+          "rules": [{ "id": "ExpireGeneratedExports", "status": "Enabled", "expiration": { "days": 7 } }]
+        },
+        "blockPublicAccess": true
+      }
+    },
+    "lba-prod-templates-${AccountId}": {
+      "id": "lba-prod-templates-${AccountId}",
+      "name": "Upload Template Bucket",
+      "type": "s3",
+      "category": "storage",
+      "layer": 2,
+      "metadata": {
+        "type": "S3 Bucket",
+        "purpose": "Static master-data upload template (.xlsx) handed to LBAs preparing a bulk upload",
+        "description": "A fixed, rarely-changing file. FarmerRegisterService's GET /farmers/upload-template just returns a presigned GetObject URL against this bucket.",
+        "capabilities": ["Server-side encryption", "Versioning (so template updates are recoverable)"]
+      },
+      "connections": {
+        "inbound": [
+          { "source": "Admin console / manual upload", "label": "PutObject (template updates)", "isExternal": true },
+          { "source": "LBA-Prod-Core-FarmerRegisterService", "label": "GeneratePresignedUrl (GetObject)" }
+        ],
+        "outbound": []
+      },
+      "requirements": ["LBA-REQ-004"],
+      "systems": ["Farmer Management"],
+      "definition": {
+        "bucketName": "lba-prod-templates-${AccountId}",
+        "versioning": true,
+        "encryption": { "sseAlgorithm": "AES256" },
+        "blockPublicAccess": true
+      }
+    },
+    "LBA-Prod-Comm-HttpApi": {
+      "id": "LBA-Prod-Comm-HttpApi",
+      "name": "LBA Production HTTP API",
+      "type": "apigateway",
+      "category": "api",
+      "layer": 3,
+      "metadata": {
+        "type": "Amazon API Gateway HTTP API",
+        "purpose": "Single HTTP API entry point for the React/TypeScript frontend",
+        "description": "API Gateway HTTP API (v2), cheaper than a REST API and sufficient here since no request/response transformation beyond JSON is needed. CORS configured for the frontend's origin only (not '*' — this app is multi-tenant with real farmer PII, see html/cost-estimation.html's note on the real JIMGAF data). Every route except POST /auth/signup and POST /auth/login runs through LBA-Prod-Security-JwtAuthorizer.",
+        "protocolType": "HTTP",
+        "stageName": "prod",
+        "integrations": ["7 Lambda functions (6 domain services + the JWT authorizer)"]
+      },
+      "connections": {
+        "inbound": [
+          { "source": "React/TypeScript frontend (frontend/)", "label": "HTTPS fetch() calls, Authorization: Bearer", "isExternal": true }
+        ],
+        "outbound": [
+          { "target": "LBA-Prod-Security-JwtAuthorizer", "label": "REQUEST authorizer, every protected route" },
+          { "target": "LBA-Prod-Core-AuthService", "label": "POST /auth/signup, /auth/login, /auth/logout" },
+          { "target": "LBA-Prod-Core-UserAdminService", "label": "/users, /users/{id}/toggle-active" },
+          { "target": "LBA-Prod-Core-FarmerRegisterService", "label": "/farmers/*, /data/clear" },
+          { "target": "LBA-Prod-Core-LotService", "label": "/lots/*" },
+          { "target": "LBA-Prod-Core-DashboardService", "label": "GET /dashboard" },
+          { "target": "LBA-Prod-Core-SettingsService", "label": "/settings" }
+        ]
+      },
+      "requirements": ["LBA-REQ-016"],
+      "systems": ["Authentication & Access", "Farmer Management", "Lot Tracking & Traceability", "Platform Administration", "Reporting & Export"],
+      "definition": {
+        "name": "LBA-Prod-Comm-HttpApi",
+        "protocolType": "HTTP",
+        "corsConfiguration": {
+          "allowOrigins": ["${FrontendOriginUrl}"],
+          "allowMethods": ["GET", "POST", "PUT", "OPTIONS"],
+          "allowHeaders": ["Authorization", "Content-Type"],
+          "allowCredentials": false
+        },
+        "throttling": { "rateLimit": 100, "burstLimit": 200 }
+      }
+    },
+    "LBA-Prod-Security-DatabaseSecret": {
+      "id": "LBA-Prod-Security-DatabaseSecret",
+      "name": "Aurora Database Credentials",
+      "type": "secretsmanager",
+      "category": "security",
+      "layer": 4,
+      "metadata": {
+        "type": "Secrets Manager Secret",
+        "purpose": "Aurora cluster master credentials, rotated on a schedule",
+        "description": "Replaces the DATABASE_URL environment variable the current app reads from .env/.env.local.",
+        "capabilities": ["Automatic rotation (30-day)", "Access logging via CloudTrail"]
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Core-AuthService", "label": "read" },
+          { "source": "LBA-Prod-Core-UserAdminService", "label": "read" },
+          { "source": "LBA-Prod-Core-FarmerRegisterService", "label": "read" },
+          { "source": "LBA-Prod-Core-LotService", "label": "read" },
+          { "source": "LBA-Prod-Core-DashboardService", "label": "read" },
+          { "source": "LBA-Prod-Core-SettingsService", "label": "read" }
+        ],
+        "outbound": []
+      },
+      "requirements": ["LBA-REQ-014"],
+      "systems": ["Authentication & Access", "Farmer Management", "Lot Tracking & Traceability", "Platform Administration"]
+    },
+    "LBA-Prod-Security-JwtSigningKey": {
+      "id": "LBA-Prod-Security-JwtSigningKey",
+      "name": "JWT Signing Key",
+      "type": "secretsmanager",
+      "category": "security",
+      "layer": 4,
+      "metadata": {
+        "type": "Secrets Manager Secret",
+        "purpose": "HMAC signing key for self-issued session JWTs",
+        "description": "Replaces the SECRET_KEY environment variable auth.py reads today. Same role, just consumed from Secrets Manager by AuthService (to sign) and the JwtAuthorizer (to verify) instead of os.environ.",
+        "capabilities": ["Manual rotation procedure documented; both signer and verifier must pick up a rotated key together"]
+      },
+      "connections": {
+        "inbound": [
+          { "source": "LBA-Prod-Core-AuthService", "label": "read (sign)" },
+          { "source": "LBA-Prod-Security-JwtAuthorizer", "label": "read (verify)" }
+        ],
+        "outbound": []
+      },
+      "requirements": ["LBA-REQ-012"],
+      "systems": ["Authentication & Access"]
+    },
+    "LBA-Prod-Security-VPC": {
+      "id": "LBA-Prod-Security-VPC",
+      "name": "LBA Production VPC",
+      "type": "vpc",
+      "category": "networking",
+      "layer": 4,
+      "existing": false,
+      "managedByThisStack": true,
+      "metadata": {
+        "type": "Amazon VPC (newly created, dedicated to this project)",
+        "purpose": "Network isolation for all backend Lambdas and the Aurora cluster",
+        "description": "An account-wide AWS CLI sweep found no custom-tagged VPC to reuse in the personal account (294983767092) — only the standard default VPC per region, already shared by unrelated projects (dev-rabbithub-*, wynn-booking-demo-*, bet-hope-*) with at least one overly-permissive security group. Decision: provision a new, dedicated VPC rather than attach to shared infrastructure. Two private subnets only — no public subnet, no Internet Gateway, no NAT Gateway, since this app makes no outbound internet calls. A free S3 gateway endpoint plus interface endpoints for Secrets Manager and CloudWatch Logs are the only networking this needs.",
+        "integrations": [
+          "All 7 Lambda functions (VPC-attached)",
+          "lba-prod-db (private subnets)"
+        ]
+      },
+      "connections": {
+        "inbound": [],
+        "outbound": [
+          { "target": "secretsmanager.us-east-1.amazonaws.com", "label": "Interface VPC Endpoint (all Lambdas — no NAT needed)" },
+          { "target": "logs.us-east-1.amazonaws.com", "label": "Interface VPC Endpoint (all Lambdas — no NAT needed)" },
+          { "target": "s3.us-east-1.amazonaws.com", "label": "Gateway VPC Endpoint (free)" }
+        ]
+      },
+      "requirements": ["LBA-REQ-017"],
+      "systems": ["Authentication & Access", "Farmer Management", "Lot Tracking & Traceability", "Platform Administration"],
+      "definition": {
+        "vpcCidr": "10.20.0.0/16",
+        "enableDnsSupport": true,
+        "enableDnsHostnames": true,
+        "region": "us-east-1",
+        "awsAccount": "294983767092 (personal — see openQuestions/vpcDecisionNote in metadata header)",
+        "subnets": {
+          "private": [
+            { "name": "PrivateSubnet1", "cidr": "10.20.1.0/24", "availabilityZone": "us-east-1a" },
+            { "name": "PrivateSubnet2", "cidr": "10.20.2.0/24", "availabilityZone": "us-east-1b" }
+          ]
+        },
+        "internetGateway": { "attached": false },
+        "natGateway": { "enabled": false },
+        "securityGroups": [
+          { "name": "LambdaSecurityGroup", "purpose": "Attached to all 7 Lambdas; egress to AuroraSecurityGroup:5432 and to the two interface endpoints on 443" },
+          { "name": "AuroraSecurityGroup", "purpose": "Ingress from LambdaSecurityGroup on 5432 only" },
+          { "name": "VpcEndpointSecurityGroup", "purpose": "Ingress from LambdaSecurityGroup on 443 only, for the two interface endpoints" }
+        ],
+        "vpcEndpointsNeeded": [
+          { "id": "SecretsManagerEndpoint", "type": "Interface", "service": "com.amazonaws.us-east-1.secretsmanager" },
+          { "id": "CloudWatchLogsEndpoint", "type": "Interface", "service": "com.amazonaws.us-east-1.logs" },
+          { "id": "S3GatewayEndpoint", "type": "Gateway", "service": "com.amazonaws.us-east-1.s3" }
+        ],
+        "natGatewayNeeded": false
+      }
+    },
+    "LBA-Prod-Security-ExecutionRoles": {
+      "id": "LBA-Prod-Security-ExecutionRoles",
+      "name": "Lambda Execution Roles (aggregate)",
+      "type": "iam",
+      "category": "security",
+      "layer": 4,
+      "metadata": {
+        "type": "IAM Roles",
+        "purpose": "One least-privilege execution role per Lambda function, documented together for review",
+        "description": "Every role trusts only the Lambda service principal and holds exactly the inline policies listed on its own function above — nothing is shared or over-broad.",
+        "trustPolicy": "lambda.amazonaws.com"
+      },
+      "connections": { "inbound": [], "outbound": [] },
+      "requirements": ["LBA-REQ-018"],
+      "systems": ["Authentication & Access", "Farmer Management", "Lot Tracking & Traceability", "Platform Administration", "Reporting & Export"],
+      "definition": {
+        "roles": [
+          { "roleName": "LBA-Prod-Security-AuthService-ExecutionRole", "inlinePolicies": ["SecretsManager-GetSecretValue(DB-creds, JWT-key)"] },
+          { "roleName": "LBA-Prod-Security-UserAdminService-ExecutionRole", "inlinePolicies": ["SecretsManager-GetSecretValue(DB-creds)"] },
+          { "roleName": "LBA-Prod-Security-FarmerRegisterService-ExecutionRole", "inlinePolicies": ["SecretsManager-GetSecretValue(DB-creds)", "S3-ReadWrite(templates, exports, uploads buckets)"] },
+          { "roleName": "LBA-Prod-Security-LotService-ExecutionRole", "inlinePolicies": ["SecretsManager-GetSecretValue(DB-creds)", "S3-ReadWrite(exports bucket)"] },
+          { "roleName": "LBA-Prod-Security-DashboardService-ExecutionRole", "inlinePolicies": ["SecretsManager-GetSecretValue(DB-creds)"] },
+          { "roleName": "LBA-Prod-Security-SettingsService-ExecutionRole", "inlinePolicies": ["SecretsManager-GetSecretValue(DB-creds)"] },
+          { "roleName": "LBA-Prod-Security-JwtAuthorizer-ExecutionRole", "inlinePolicies": ["SecretsManager-GetSecretValue(JWT-key)"] }
+        ]
+      }
+    },
+    "LBA-Prod-Security-LambdaLogGroups": {
+      "id": "LBA-Prod-Security-LambdaLogGroups",
+      "name": "Lambda Log Groups (aggregate)",
+      "type": "cloudwatchloggroup",
+      "category": "monitoring",
+      "layer": 4,
+      "metadata": {
+        "type": "CloudWatch Log Group",
+        "purpose": "Centralized logging for all 7 Lambda functions",
+        "description": "One log group per function at /aws/lambda/{FunctionName} (AWS-managed naming), 30-day retention.",
+        "capabilities": ["Log aggregation", "Query support via CloudWatch Insights"]
+      },
+      "connections": {
+        "inbound": [{ "source": "All 7 Lambda functions", "label": "write" }],
+        "outbound": [{ "target": "CloudWatch Insights", "label": "query" }]
+      },
+      "requirements": ["LBA-REQ-019"],
+      "systems": ["Authentication & Access", "Farmer Management", "Lot Tracking & Traceability", "Platform Administration", "Reporting & Export"],
+      "definition": { "retentionInDays": 30 }
+    },
+    "LBA-Prod-Security-HighErrorRateAlarm": {
+      "id": "LBA-Prod-Security-HighErrorRateAlarm",
+      "name": "High Lambda Error Rate Alarm",
+      "type": "cloudwatchalarm",
+      "category": "monitoring",
+      "layer": 4,
+      "metadata": {
+        "type": "CloudWatch Alarm",
+        "purpose": "Alert when any domain Lambda's error rate spikes",
+        "description": "Watches the aggregate Errors metric across all 7 functions; fires to the ops alerts topic.",
+        "capabilities": ["Error detection"]
+      },
+      "connections": {
+        "inbound": [{ "source": "CloudWatch Metrics", "label": "monitor Errors metric" }],
+        "outbound": [{ "target": "LBA-Prod-Security-OpsAlertsTopic", "label": "notify" }]
+      },
+      "requirements": ["LBA-REQ-020"],
+      "systems": ["Platform Administration"],
+      "definition": { "metric": "Errors", "threshold": 5, "evaluationPeriods": 1, "periodSeconds": 300 }
+    },
+    "LBA-Prod-Security-OpsAlertsTopic": {
+      "id": "LBA-Prod-Security-OpsAlertsTopic",
+      "name": "Ops Alerts Topic",
+      "type": "sns",
+      "category": "integration",
+      "layer": 4,
+      "metadata": {
+        "type": "SNS Topic",
+        "purpose": "Send operational alerts to whoever is on call",
+        "description": "Single topic for now — error-rate alarm only. Email subscription added once an on-call contact is confirmed.",
+        "capabilities": ["Email notifications"]
+      },
+      "connections": {
+        "inbound": [{ "source": "LBA-Prod-Security-HighErrorRateAlarm", "label": "publish" }],
+        "outbound": [{ "target": "Email subscription (TBD)", "label": "notify" }]
+      },
+      "requirements": ["LBA-REQ-020"],
+      "systems": ["Platform Administration"]
+    }
+  }
+}

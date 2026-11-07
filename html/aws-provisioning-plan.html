@@ -18,6 +18,11 @@
   <h1>Provisioning the backend on AWS</h1>
   <p class="subtitle">A phased plan for moving the stateful parts of the app onto AWS while Vercel keeps serving the UI exactly as it does today — plus the one decision that has to be made before any of it starts.</p>
 
+  <div class="callout">
+    <strong>Superseded in part</strong>
+    The <a href="frontend-backend-split-plan.html">frontend/backend split plan</a> moves the UI itself to React/TypeScript rather than keeping it on Vercel as Jinja2 — read that document for the current target architecture. The AWS-side phases below (foundations, security, observability, the Neon-vs-RDS decision) still apply; only Phase&nbsp;2's compute choice changes from App Runner/Fargate to Lambda + API Gateway via SAM.
+  </div>
+
   <h2 id="decision">1. The decision this plan depends on</h2>
   <p>Today the whole app — Jinja2 pages and the Postgres-backed route handlers in <code>app.py</code> — runs as one thing on Vercel. "Backend on AWS, frontend on Vercel as is" only makes sense once that one thing becomes two things that talk over HTTP. There are two honest ways to get there:</p>
 

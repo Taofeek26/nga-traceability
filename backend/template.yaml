@@ -1,0 +1,509 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Nigeria LBA Level Traceability backend - direct Lambda-to-API-Gateway
+  integrations, no web framework, Aurora PostgreSQL Serverless v2, in a
+  new dedicated VPC (no custom VPC existed in the account to reuse).
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [arm64]
+    MemorySize: 256
+    Timeout: 15
+    Layers: [!Ref CommonLayer]
+    VpcConfig:
+      SecurityGroupIds: [!Ref LambdaSecurityGroup]
+      SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+    Environment:
+      Variables:
+        DB_SECRET_ARN: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+        DB_HOST: !GetAtt AuroraCluster.Endpoint.Address
+        DB_PORT: !GetAtt AuroraCluster.Endpoint.Port
+        DB_NAME: lba_production
+        JWT_SECRET_ARN: !Ref JwtSigningKeySecret
+        FRONTEND_ORIGIN: '*'
+
+Resources:
+  # ---------------------------------------------------------------- network
+  AppVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.20.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags: [{Key: Name, Value: LBA-Prod-VPC}]
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.20.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags: [{Key: Name, Value: LBA-Prod-PrivateSubnet1}]
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref AppVpc
+      CidrBlock: 10.20.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags: [{Key: Name, Value: LBA-Prod-PrivateSubnet2}]
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref AppVpc
+      Tags: [{Key: Name, Value: LBA-Prod-PrivateRouteTable}]
+
+  PrivateSubnet1RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet1
+      RouteTableId: !Ref PrivateRouteTable
+
+  PrivateSubnet2RouteAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet2
+      RouteTableId: !Ref PrivateRouteTable
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Attached to all backend Lambdas
+      VpcId: !Ref AppVpc
+      SecurityGroupEgress: []
+      Tags: [{Key: Name, Value: LBA-Prod-LambdaSecurityGroup}]
+
+  AuroraSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Aurora cluster - ingress from Lambdas only
+      VpcId: !Ref AppVpc
+      Tags: [{Key: Name, Value: LBA-Prod-AuroraSecurityGroup}]
+
+  VpcEndpointSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Interface VPC endpoints - ingress from Lambdas only
+      VpcId: !Ref AppVpc
+      Tags: [{Key: Name, Value: LBA-Prod-VpcEndpointSecurityGroup}]
+
+  LambdaToAuroraEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      DestinationSecurityGroupId: !Ref AuroraSecurityGroup
+
+  LambdaToEndpointsEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationSecurityGroupId: !Ref VpcEndpointSecurityGroup
+
+  # Gateway endpoints (S3) route at the network layer via the VPC route
+  # table, but the Lambda security group still needs an explicit egress
+  # rule to the service's prefix list - without it, S3 calls hang silently
+  # until the function times out (found during the first real deploy).
+  LambdaToS3PrefixListEgress:
+    Type: AWS::EC2::SecurityGroupEgress
+    Properties:
+      GroupId: !Ref LambdaSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      DestinationPrefixListId: pl-63a5400a
+
+  AuroraFromLambdaIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref AuroraSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref LambdaSecurityGroup
+
+  EndpointsFromLambdaIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref VpcEndpointSecurityGroup
+      IpProtocol: tcp
+      FromPort: 443
+      ToPort: 443
+      SourceSecurityGroupId: !Ref LambdaSecurityGroup
+
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref AppVpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.s3
+      VpcEndpointType: Gateway
+      RouteTableIds: [!Ref PrivateRouteTable]
+
+  SecretsManagerEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref AppVpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.secretsmanager
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+      SecurityGroupIds: [!Ref VpcEndpointSecurityGroup]
+
+  CloudWatchLogsEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref AppVpc
+      ServiceName: !Sub com.amazonaws.${AWS::Region}.logs
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+      SecurityGroupIds: [!Ref VpcEndpointSecurityGroup]
+
+  # ----------------------------------------------------------------- database
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: LBA Aurora subnet group
+      SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
+
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Properties:
+      Engine: aurora-postgresql
+      DatabaseName: lba_production
+      MasterUsername: lba_admin
+      ManageMasterUserPassword: true
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      VpcSecurityGroupIds: [!Ref AuroraSecurityGroup]
+      StorageEncrypted: true
+      BackupRetentionPeriod: 14
+      DeletionProtection: false
+      ServerlessV2ScalingConfiguration:
+        MinCapacity: 0.5
+        MaxCapacity: 8
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      Engine: aurora-postgresql
+      DBInstanceClass: db.serverless
+      DBClusterIdentifier: !Ref AuroraCluster
+      PubliclyAccessible: false
+
+  # ------------------------------------------------------------------ secrets
+  JwtSigningKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: LBA-prod-JwtSigningKey
+      Description: HMAC signing key for self-issued session JWTs
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: jwtSigningKey
+        PasswordLength: 64
+        ExcludePunctuation: true
+
+  # -------------------------------------------------------------------- s3
+  UploadsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub lba-prod-uploads-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireStagedUploads
+            Status: Enabled
+            ExpirationInDays: 7
+
+  ExportsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub lba-prod-exports-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireGeneratedExports
+            Status: Enabled
+            ExpirationInDays: 7
+
+  TemplatesBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub lba-prod-templates-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub lba-prod-documents-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      VersioningConfiguration:
+        Status: Enabled
+      # No lifecycle expiry, unlike uploads/exports - certificates and other
+      # supporting evidence need to persist, not auto-delete after 7 days.
+
+  # ---------------------------------------------------------------- layer
+  CommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: lba-prod-common
+      ContentUri: layers/common/
+      CompatibleRuntimes: [python3.12]
+      CompatibleArchitectures: [arm64]
+      RetentionPolicy: Delete
+    Metadata:
+      BuildMethod: python3.12
+      BuildArchitecture: arm64
+
+  # ------------------------------------------------------------- http api
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      CorsConfiguration:
+        AllowOrigins: ['*']
+        AllowHeaders: [Authorization, Content-Type]
+        AllowMethods: [GET, POST, PUT, DELETE, OPTIONS]
+      Auth:
+        Authorizers:
+          JwtAuthorizer:
+            FunctionArn: !GetAtt JwtAuthorizerFunction.Arn
+            FunctionPayloadType: REQUEST
+            Identity:
+              Headers: [Authorization]
+            AuthorizerPayloadFormatVersion: '2.0'
+            EnableSimpleResponses: true
+        DefaultAuthorizer: JwtAuthorizer
+
+  # SAM does not auto-grant HttpApi custom authorizers invoke permission
+  # the way it does for REST APIs - without this, every protected route
+  # 500s before the authorizer (or the target Lambda) ever runs.
+  JwtAuthorizerInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref JwtAuthorizerFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${HttpApi}/*
+
+  # ------------------------------------------------------------- functions
+  JwtAuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/security/jwt_authorizer/
+      Handler: app.lambda_handler
+      MemorySize: 128
+      Timeout: 5
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref JwtSigningKeySecret
+
+  AuthServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/auth_service/
+      Handler: app.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource:
+                - !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+                - !Ref JwtSigningKeySecret
+      Events:
+        Signup:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /auth/signup, Method: POST, Auth: {Authorizer: NONE}}
+        Login:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /auth/login, Method: POST, Auth: {Authorizer: NONE}}
+        Logout:
+          Type: HttpApi
+          Properties: {ApiId: !Ref HttpApi, Path: /auth/logout, Method: POST}
+
+  UserAdminServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/user_admin_service/
+      Handler: app.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+      Events:
+        List: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /users, Method: GET}}
+        Create: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /users, Method: POST}}
+        ToggleActive: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/users/{id}/toggle-active", Method: POST}}
+
+  DashboardServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/dashboard_service/
+      Handler: app.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+      Events:
+        Dashboard: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /dashboard, Method: GET}}
+
+  SettingsServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/settings_service/
+      Handler: app.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+      Events:
+        Get: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /settings, Method: GET}}
+        Put: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /settings, Method: PUT}}
+
+  FarmerRegisterServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/farmer_register_service/
+      Handler: app.lambda_handler
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          TEMPLATES_BUCKET: !Ref TemplatesBucket
+          EXPORTS_BUCKET: !Ref ExportsBucket
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+        - S3ReadPolicy: {BucketName: !Ref TemplatesBucket}
+        - S3CrudPolicy: {BucketName: !Ref TemplatesBucket}
+        - S3CrudPolicy: {BucketName: !Ref ExportsBucket}
+      Events:
+        UploadTemplate: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /farmers/upload-template, Method: GET}}
+        Upload: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /farmers/upload, Method: POST}}
+        List: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /farmers, Method: GET}}
+        Detail: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/farmers/{code}", Method: GET}}
+        Incentives: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/farmers/{code}/incentives", Method: POST}}
+        ToggleActive: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/farmers/{code}/toggle-active", Method: POST}}
+        Export: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /farmers/export, Method: GET}}
+        ClearAll: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /farmers/clear-all, Method: POST}}
+
+  LotServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/lot_service/
+      Handler: app.lambda_handler
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          EXPORTS_BUCKET: !Ref ExportsBucket
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+        - S3CrudPolicy: {BucketName: !Ref ExportsBucket}
+      Events:
+        List: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /lots, Method: GET}}
+        Eligibility: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /lots/eligibility, Method: GET}}
+        Create: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /lots, Method: POST}}
+        Detail: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/lots/{id}", Method: GET}}
+        Accept: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/lots/{id}/accept", Method: POST}}
+        Reject: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/lots/{id}/reject", Method: POST}}
+        Export: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/lots/{id}/export", Method: GET}}
+        Receipts: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/lots/{id}/receipts", Method: POST}}
+
+  AuditLogServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/audit_log_service/
+      Handler: app.lambda_handler
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+      Events:
+        List: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /audit-log, Method: GET}}
+
+  DocumentServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/document_service/
+      Handler: app.lambda_handler
+      MemorySize: 512
+      Timeout: 30
+      Environment:
+        Variables:
+          DOCUMENTS_BUCKET: !Ref DocumentsBucket
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+        - S3CrudPolicy: {BucketName: !Ref DocumentsBucket}
+      Events:
+        List: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /documents, Method: GET}}
+        Upload: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /documents, Method: POST}}
+        Download: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/documents/{id}/download", Method: GET}}
+        Delete: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/documents/{id}", Method: DELETE}}
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the HTTP API
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com
+  AuroraEndpoint:
+    Value: !GetAtt AuroraCluster.Endpoint.Address
+  AuroraSecretArn:
+    Value: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+  UploadsBucketName:
+    Value: !Ref UploadsBucket
+  ExportsBucketName:
+    Value: !Ref ExportsBucket
+  TemplatesBucketName:
+    Value: !Ref TemplatesBucket
+  DocumentsBucketName:
+    Value: !Ref DocumentsBucket

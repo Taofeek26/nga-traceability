@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frontend/Backend Split Plan</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="doc-nav">
+    <span><a href="index.html">&larr; LBA Traceability — Ops Docs</a></span>
+    <span>Updated 2026-11-07</span>
+  </div>
+
+  <p class="eyebrow">Architecture &amp; Migration</p>
+  <h1>Splitting into a React/TypeScript frontend and a framework-free AWS Lambda backend</h1>
+  <p class="subtitle">A plan to carry the current design system and every page over into a proper <code>frontend/</code> + <code>backend/</code> split — React/TypeScript on one side, plain Lambda handlers wired directly to API Gateway (no FastAPI, no Mangum) against Aurora PostgreSQL Serverless v2 on the other, using a new, dedicated VPC (an account sweep found nothing to reuse).</p>
+
+  <div class="callout warn">
+    <strong>This is the plan, not the build</strong>
+    Nothing in the live app changes from reading this document. It lays out the decision, the directory layout, the route-by-route mapping, and the risk list, so the actual scaffolding work can start from an agreed design instead of guesswork. Say go and the implementation starts from Phase&nbsp;1.
+  </div>
+
+  <div class="callout">
+    <strong>This document and the resource-mapping JSON files are the same design, two views</strong>
+    The route-by-route table and phases below describe the architecture in prose. <code>infra/resource-mapping/lba-backend-unified-resource-mapping-layer-oriented.json</code> is the canonical, resource-by-resource registry (every Lambda's memory/timeout/env vars/IAM policy, the Aurora cluster's scaling config, the new VPC's CIDR, subnets, and security groups) and <code>-process-oriented.json</code> groups the same resources into business flows. If the two ever disagree, the JSON wins — update it first, then this page.
+  </div>
+
+  <h2 id="decision">1. The decision: keep Jinja2 on Lambda, or rebuild the UI in React?</h2>
+  <p>You flagged the real fork yourself: is it still fine to keep the current FastAPI + Jinja2 frontend, or move to TypeScript/React while keeping every component and style exactly as it looks today? Both are real options — here's the honest trade-off.</p>
+
+  <h3>Option A — Lift the whole app onto Lambda, keep Jinja2</h3>
+  <p>Wrap the existing <code>app.py</code> with the <a href="https://github.com/jordaneremieff/mangum">Mangum</a> ASGI adapter and run the entire FastAPI app — routes, Jinja2 rendering, everything — as one Lambda function behind API Gateway, deployed with SAM. Zero template rewrite, zero component rewrite, same macros, same CSS. "Backend on AWS alone" becomes true the moment Vercel is out of the picture. The cost: there's no separate <code>frontend/</code> directory in any real sense — it's still one monolith, just relocated. This isn't what you described wanting, but it's the fallback if the React rewrite below turns out to be more than the project needs right now.</p>
+
+  <h3>Option B — True split: React/TypeScript frontend, framework-free Lambda backend (confirmed)</h3>
+  <p>This is what you described, and it's the right target for a product meant to scale to many LBAs: a <code>backend/</code> SAM app of seven plain Python Lambda handlers — no FastAPI, no Mangum, each one reading <code>event['rawPath']</code> / <code>event['requestContext']['http']['method']</code> directly off the API Gateway proxy event — and a <code>frontend/</code> React/TypeScript single-page app that calls them. <strong>The components and styles genuinely do carry over almost unchanged</strong> — see §3. The real cost is everywhere a page currently does something only a server-rendered app can do cheaply: sessions, file upload/download, and the one-request-does-everything flow of a POST that redirects to a result page. §5 and §6 cover exactly what that costs.</p>
+
+  <div class="callout good">
+    <strong>Confirmed direction</strong>
+    Option B, with two corrections to the original draft: the backend runs no web framework at all (seven domain Lambdas behind direct API Gateway integrations, not one Lambda running FastAPI via Mangum), and the database is Aurora PostgreSQL Serverless v2 rather than RDS/Neon, using a new dedicated VPC. The CSS and visual design are still not being redone — only the templating layer (Jinja2 <code>{% %}</code> syntax) becomes React components with the same markup and the same class names. Option A is noted only as a faster escape hatch if the timeline gets tight.
+  </div>
+
+  <h2 id="what-carries-over">2. What genuinely doesn't change</h2>
+  <p>This is the part worth saying plainly, since "rewrite the frontend" sounds bigger than it is here:</p>
+  <ul>
+    <li><strong>Every CSS file carries over verbatim</strong> — <code>design-system/css/tokens.css</code> and <code>design-system/css/lba-ui.css</code> (mirrored today at <code>static/ds/</code>) become <code>frontend/src/styles/tokens.css</code> and <code>lba-ui.css</code>, copy-pasted, no edits. CSS doesn't know or care whether the markup above it came from Jinja2 or React.</li>
+    <li><strong>The icon sprite carries over verbatim</strong> — <code>templates/partials/icons.html</code> is inlined SVG <code>&lt;symbol&gt;</code> defs; it drops into the React app's root template exactly as it is today.</li>
+    <li><strong>Every class name, every layout, every badge color, every spacing token stays identical</strong> — nothing in <code>design-system/docs/foundations.md</code> or <code>components.md</code> needs to change; they describe the CSS, not the templating engine.</li>
+    <li><strong>The business logic barely moves</strong> — <code>allocation.py</code> (the proportional-split algorithm) and the quota/eligibility rules in <code>database.py</code> transfer into the new backend essentially unedited; only the thin layer around them (how a request comes in, how a response goes out) changes.</li>
+  </ul>
+  <p>What <em>does</em> change is <code>templates/macros.html</code> (12 Jinja2 macros) becoming 12 small React components, and each of the 10 page templates becoming a React route that fetches JSON instead of a server that renders HTML. That's real but mechanical work — see §4.</p>
+
+  <h2 id="architecture">3. Target architecture</h2>
+  <figure>
+    <svg viewBox="0 0 900 340" role="img" aria-label="A browser loads the React single-page app from a static host, then calls an API Gateway HTTP API. API Gateway invokes a JWT authorizer Lambda, then one of seven plain Lambda handlers with no web framework, all attached to a VPC that already exists. Those Lambdas read and write an Aurora PostgreSQL Serverless v2 cluster and S3 buckets, and read secrets from Secrets Manager.">
+      <defs>
+        <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0,0 L10,5 L0,10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <style>
+        .box { fill: none; stroke: currentColor; stroke-width: 1.3; rx: 10; }
+        .box.accent { stroke-width: 2; }
+        .lbl { font-size: 12px; text-anchor: middle; }
+        .lbl.title { font-size: 12.5px; font-weight: 600; }
+        .lbl.sub { font-size: 9.5px; opacity: 0.68; }
+        .edge { fill: none; stroke: currentColor; stroke-width: 1.2; marker-end: url(#arrow2); }
+        .edge-lbl { font-size: 9.5px; text-anchor: middle; opacity: 0.8; }
+        .grp { stroke: currentColor; stroke-width: 1; stroke-dasharray: 4 4; fill: none; opacity: 0.45; rx: 12; }
+        .grp-lbl { font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.6; }
+      </style>
+
+      <rect class="box" x="15" y="130" width="100" height="55"/>
+      <text class="lbl title" x="65" y="153">Browser</text>
+      <text class="lbl sub" x="65" y="169">LBA staff user</text>
+
+      <rect class="grp" x="155" y="105" width="155" height="105"/>
+      <text class="grp-lbl" x="165" y="95">frontend/ (static host)</text>
+      <rect class="box" x="172" y="130" width="120" height="55"/>
+      <text class="lbl title" x="232" y="153">React SPA</text>
+      <text class="lbl sub" x="232" y="169">Vite + TypeScript</text>
+
+      <rect class="grp" x="345" y="15" width="540" height="310"/>
+      <text class="grp-lbl" x="355" y="5">backend/ (AWS, via SAM)</text>
+
+      <rect class="box" x="365" y="130" width="100" height="55"/>
+      <text class="lbl title" x="415" y="150">API Gateway</text>
+      <text class="lbl sub" x="415" y="164">HTTP API</text>
+
+      <rect class="box" x="480" y="60" width="110" height="45"/>
+      <text class="lbl title" x="535" y="80" style="font-size:11px;">JWT Authorizer</text>
+      <text class="lbl sub" x="535" y="93">Lambda, REQUEST type</text>
+
+      <rect class="grp" x="480" y="120" width="220" height="155"/>
+      <text class="grp-lbl" x="490" y="285">Dedicated VPC (newly created)</text>
+      <rect class="box accent" x="500" y="150" width="180" height="55"/>
+      <text class="lbl title" x="590" y="170">7 Lambda handlers</text>
+      <text class="lbl sub" x="590" y="184">plain Python, no framework</text>
+      <text class="lbl sub" x="590" y="198" style="font-size:8.5px;">Auth · Users · Farmers · Lots · Dashboard · Settings</text>
+
+      <rect class="box" x="730" y="150" width="130" height="55"/>
+      <text class="lbl title" x="795" y="170" style="font-size:11px;">Aurora PostgreSQL</text>
+      <text class="lbl sub" x="795" y="184">Serverless v2, 0.5–8 ACU</text>
+
+      <rect class="box" x="730" y="60" width="130" height="45"/>
+      <text class="lbl title" x="795" y="80" style="font-size:11px;">S3</text>
+      <text class="lbl sub" x="795" y="93">uploads / exports / templates</text>
+
+      <rect class="box" x="730" y="235" width="130" height="45"/>
+      <text class="lbl title" x="795" y="253" style="font-size:10.5px;">Secrets Manager</text>
+      <text class="lbl sub" x="795" y="267">DB creds, JWT key</text>
+
+      <path class="edge" d="M115,157 L172,157"/>
+      <text class="edge-lbl" x="143" y="149">loads app</text>
+
+      <path class="edge" d="M292,157 L365,157"/>
+      <text class="edge-lbl" x="328" y="140">fetch() JSON</text>
+      <text class="edge-lbl" x="328" y="152">Bearer token</text>
+
+      <path class="edge" d="M440,130 L510,105"/>
+      <text class="edge-lbl" x="465" y="110">authorize</text>
+
+      <path class="edge" d="M465,152 L500,165"/>
+
+      <path class="edge" d="M680,165 L730,165"/>
+      <text class="edge-lbl" x="705" y="150">presigned URL</text>
+
+      <path class="edge" d="M680,180 L730,180"/>
+      <text class="edge-lbl" x="705" y="200">read/write</text>
+
+      <path class="edge" d="M590,150 L590,105"/>
+
+      <path class="edge" d="M680,195 L730,250"/>
+      <text class="edge-lbl" x="695" y="225">GetSecretValue</text>
+
+      <path class="edge" d="M535,105 L535,150"/>
+    </svg>
+    <figcaption>Target split: the React SPA is a static build with nothing server-side; every data operation goes through API Gateway's JWT authorizer to one of seven plain Lambda handlers inside the VPC that already exists, which are the only things that talk to Aurora, S3, and Secrets Manager.</figcaption>
+  </figure>
+  <p>Where <code>frontend/</code> is hosted doesn't actually need to change from what you have today — a Vite production build is static files, and Vercel serves static files just as well as it served the old FastAPI functions (or S3 + CloudFront, or AWS Amplify Hosting, work equally well). The only thing being removed from Vercel is the Python runtime; the files it serves become plain HTML/JS/CSS. The full resource-by-resource detail behind this diagram — every Lambda's trigger paths, IAM policy, and VPC config — is in <code>infra/resource-mapping/lba-backend-unified-resource-mapping-layer-oriented.json</code>.</p>
+
+  <h2 id="layout">4. Directory layout</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Path</th><th>What's in it</th></tr></thead>
+      <tbody>
+        <tr><td><code>frontend/</code></td><td>New Vite + React + TypeScript app. <code>src/styles/</code> gets the two CSS files copied in unchanged; <code>src/components/</code> holds the 12 macro-equivalents (§5); <code>src/pages/</code> holds one file per current template; <code>src/api/</code> holds a typed fetch client for the backend.</td></tr>
+        <tr><td><code>backend/</code></td><td>New SAM CLI app. <code>template.yaml</code> defines the HTTP API Gateway, the JWT authorizer Lambda, seven domain Lambdas, and the Aurora Serverless v2 cluster — including its own new VPC, two private subnets, and VPC endpoints — no shared infrastructure. <code>src/core/&lt;service&gt;/</code> holds one plain-Python handler per domain (<code>auth_service/</code>, <code>user_admin_service/</code>, <code>farmer_register_service/</code>, <code>lot_service/</code>, <code>dashboard_service/</code>, <code>settings_service/</code>) plus <code>security/jwt_authorizer/</code>. <code>database.py</code>, <code>allocation.py</code> carry over from the repo root into a shared layer, imported by every handler, with minimal edits (see §6). No FastAPI, no Mangum, no web framework anywhere in <code>backend/</code>.</td></tr>
+        <tr><td><code>app.py</code>, <code>templates/</code>, <code>database.py</code>, etc. (repo root)</td><td>Untouched. This is the live production app on Vercel + Neon. It keeps running, unmodified, for the entire migration — see §8.</td></tr>
+        <tr><td><code>design-system/</code></td><td>Stays as the source of truth for the CSS and the component/foundation docs; both the old root app and the new <code>frontend/</code> read from (copies of) the same files, so a future style change gets made once and ported, not invented twice.</td></tr>
+        <tr><td><code>infra/resource-mapping/</code></td><td>The two JSON files that are the canonical source for every AWS resource's exact configuration — read these, not this prose, for the authoritative Lambda memory sizes, env vars, IAM policies, and the Aurora/VPC settings.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="components">5. Macro → component mapping</h2>
+  <p>Every macro in <code>templates/macros.html</code> maps to one small, typed React component. None of them change what they render — same tag, same classes, same conditional logic, just as a function returning JSX instead of a Jinja2 <code>{% macro %}</code>.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Jinja2 macro</th><th>React component</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>icon(name, size, label)</code></td><td><code>&lt;Icon name size label /&gt;</code></td><td>Same <code>&lt;use href="#i-..."/&gt;</code> pattern against the same inlined sprite.</td></tr>
+        <tr><td><code>nav_link(href, label, icon, active)</code></td><td><code>&lt;NavLink&gt;</code></td><td><code>active</code> becomes React Router's <code>useMatch</code>/<code>NavLink</code> active state instead of a server-computed boolean.</td></tr>
+        <tr><td><code>page_header(title, desc, eyebrow)</code> + <code>caller()</code> block</td><td><code>&lt;PageHeader title desc eyebrow&gt;{children}&lt;/PageHeader&gt;</code></td><td>Jinja2's <code>{% call %}</code> block becomes ordinary React children.</td></tr>
+        <tr><td><code>stat(...)</code></td><td><code>&lt;StatTile /&gt;</code></td><td>Direct prop-for-prop port.</td></tr>
+        <tr><td><code>alert(message, kind, title)</code></td><td><code>&lt;Alert /&gt;</code></td><td>Same icon-by-kind lookup table, same markup.</td></tr>
+        <tr><td><code>farmer_status(active, pct)</code>, <code>lot_status(status)</code></td><td><code>&lt;FarmerStatusBadge /&gt;</code>, <code>&lt;LotStatusBadge /&gt;</code></td><td>The 90%/100% threshold logic moves verbatim into the component.</td></tr>
+        <tr><td><code>progress(pct, size)</code>, <code>mini_meter(pct)</code></td><td><code>&lt;ProgressBar /&gt;</code>, <code>&lt;MiniMeter /&gt;</code></td><td>Same tone-by-threshold logic.</td></tr>
+        <tr><td><code>avatar(...)</code>, <code>avatar_name(full_name)</code></td><td><code>&lt;Avatar /&gt;</code></td><td>Initials logic ports as-is.</td></tr>
+        <tr><td><code>empty_state(...)</code>, <code>back_link(...)</code></td><td><code>&lt;EmptyState /&gt;</code>, <code>&lt;BackLink /&gt;</code></td><td>Direct ports.</td></tr>
+        <tr><td><code>kg(value, decimals)</code>, <code>naira(value)</code></td><td><code>formatKg()</code>, <code>formatNaira()</code></td><td>Plain TypeScript formatting functions (<code>Intl.NumberFormat</code>), not components.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="routes">6. Route-by-route plan</h2>
+  <p>The 26 current endpoints in <code>app.py</code> become new paths on the backend, each owned by exactly one of the seven domain Lambdas (full trigger definitions in <code>infra/resource-mapping/lba-backend-unified-resource-mapping-layer-oriented.json</code>) — not a 1:1 rename, since routes that only rendered an empty HTML form (<code>GET /signup</code>, <code>GET /login</code>, <code>GET /upload</code>) disappear from the backend entirely once the React frontend renders those forms itself. No business rule changes — only the response format (JSON, not rendered HTML) and the path/verb shape (REST-ier now that there's no HTML form to submit against).</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>New backend route(s)</th><th>Owning Lambda</th><th>Was (app.py)</th><th>Watch for</th></tr></thead>
+      <tbody>
+        <tr><td><code>POST /auth/signup</code>, <code>POST /auth/login</code>, <code>POST /auth/logout</code></td><td>AuthService</td><td><code>/signup</code>, <code>/login</code>, <code>/logout</code></td><td>Cookie session → JWT bearer token (§7) — the one real behavior change in this table. The GET form-rendering routes are gone; React owns those forms.</td></tr>
+        <tr><td><code>GET</code>/<code>POST /users</code>, <code>POST /users/{id}/toggle-active</code></td><td>UserAdminService</td><td><code>/users</code>, <code>/users/{id}/toggle-active</code></td><td>Admin-only guard currently checked server-side; becomes a client-side route guard <em>and</em> a re-check inside the Lambda from the JWT's <code>role</code> claim — never trust the client-side one alone.</td></tr>
+        <tr><td><code>GET /dashboard</code></td><td>DashboardService</td><td><code>/</code></td><td>Straightforward read-only aggregation endpoint.</td></tr>
+        <tr><td><code>GET /farmers/upload-template</code>, <code>POST /farmers/upload</code>, <code>GET /farmers</code>, <code>GET /farmers/{code}</code>, <code>POST /farmers/{code}/incentives</code>, <code>POST /farmers/{code}/toggle-active</code>, <code>GET /farmers/export</code>, <code>POST /farmers/clear-all</code></td><td>FarmerRegisterService</td><td><code>/upload</code>, <code>/upload/template</code>, <code>/farmers</code>, <code>/farmers/{code}</code>, incentives, toggle-active, <code>/farmers/export</code>, <code>/data/clear</code></td><td><code>/farmers/upload-template</code> and <code>/farmers/export</code> are downloads — presigned S3 URLs (§7.2), not streamed through API Gateway. <code>/farmers/clear-all</code> keeps the same destructive-action confirmation step, now as a JS confirm/modal.</td></tr>
+        <tr><td><code>GET /lots</code>, <code>GET /lots/eligibility</code>, <code>POST /lots</code>, <code>GET /lots/{id}</code>, <code>POST /lots/{id}/accept</code>, <code>POST /lots/{id}/reject</code>, <code>GET /lots/{id}/export</code></td><td>LotService</td><td><code>/lots</code>, <code>/lots/new</code> (GET+POST), <code>/lots/{id}</code>, accept/reject, <code>/lots/{id}/export</code></td><td>Today's flow is "POST, then 303 redirect to the result page, server-rendered." The SPA does: POST → get JSON back → <code>navigate()</code> to the result route, which re-fetches by ID. <code>GET /lots/eligibility</code> is the one new endpoint — it's the <code>n_eligible</code> count the old <code>GET /lots/new</code> computed before rendering the form.</td></tr>
+        <tr><td><code>GET</code>/<code>PUT /settings</code></td><td>SettingsService</td><td><code>/settings</code> (GET+POST)</td><td>POST becomes PUT — otherwise unchanged.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="hard-parts">7. The three things that actually change behavior</h2>
+
+  <h3>7.1 — Sessions: signed cookie → JWT bearer token, verified by a dedicated authorizer Lambda</h3>
+  <p><code>auth.py</code> today signs a cookie (<code>itsdangerous</code>, carrying <code>user_id</code>/<code>lba_id</code>/<code>org_name</code>/<code>user_name</code>/<code>role</code>) that works because the browser and the app share one origin. Once the frontend and backend are on different domains (<code>app.yourdomain.com</code> vs. <code>api.yourdomain.com</code>), a cookie-based session needs <code>SameSite=None; Secure</code> and gets flaky across browsers/privacy modes. The fix: AuthService issues the exact same signed payload, but as a JWT returned in the login response body — stored in memory on the frontend, sent as <code>Authorization: Bearer</code> on every request. Every protected route then runs through <code>LBA-Prod-Security-JwtAuthorizer</code>, a small <strong>custom</strong> Lambda authorizer (not API Gateway's native JWT authorizer, since these tokens are self-issued rather than coming from an OIDC provider with a JWKS endpoint like Cognito). It verifies the signature against the key in <code>LBA-Prod-Security-JwtSigningKey</code> and passes <code>lba_id</code>/<code>role</code>/<code>user_id</code> to the domain Lambda as request context — the same tenant-isolation guarantee app.py enforces today, just checked once at the API boundary instead of in-process.</p>
+
+  <h3>7.2 — File upload/download through API Gateway</h3>
+  <p>The HTTP API has a 10MB payload limit (plenty for the current ~140KB master-data files) and each Lambda has its own timeout (30s for the two that touch files — see the registry). Uploads (small xlsx files) are fine going straight through. <strong>Downloads</strong> (the template file, the farmer export, the lot delivery-slip export) are served a different way: the owning Lambda writes the generated file to one of the three S3 buckets and returns a short-lived presigned URL in the JSON response; the browser downloads directly from S3. This avoids ever base64-encoding a file through API Gateway and sidesteps the payload limit entirely as exports grow.</p>
+
+  <h3>7.3 — Database connections from Lambda, inside the new dedicated VPC</h3>
+  <p>Lambda can run many concurrent invocations, each potentially opening its own Postgres connection — the one thing that doesn't scale the same way a stateless container does. All seven domain Lambdas and the Aurora cluster sit in a new, dedicated VPC (10.20.0.0/16, two private subnets across two AZs — no custom VPC existed in the account to reuse, confirmed by an AWS CLI sweep). Since this app makes no outbound internet calls, there's no NAT Gateway: a free S3 gateway endpoint plus interface endpoints for Secrets Manager and CloudWatch Logs are all the networking this needs. The connection-count problem itself is deferred rather than solved on day one — Aurora Serverless v2 handles moderate concurrency reasonably at pilot scale, and an RDS Proxy in front of the cluster is the documented next step once traffic past pilot scale makes connection exhaustion a real risk, not before.</p>
+
+  <h2 id="plan">8. Phased plan</h2>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">Phase 1</span><h3>Scaffold both directories, nothing live yet</h3><span class="phase-time">~2–3 days</span></div>
+    <ul>
+      <li><code>sam init</code> for <code>backend/</code> (Python 3.12 runtime, "Hello World" template as a starting point only — every function gets replaced per §4); <code>npm create vite@latest frontend -- --template react-ts</code> for <code>frontend/</code>.</li>
+      <li>Copy <code>design-system/css/*.css</code> into <code>frontend/src/styles/</code> and <code>templates/partials/icons.html</code>'s sprite into the frontend's root HTML, unedited.</li>
+      <li>No changes anywhere in the existing repo root — it keeps deploying to Vercel exactly as it does today.</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">Phase 2</span><h3>Backend: seven plain Lambda handlers, no framework</h3><span class="phase-time">~1–2 weeks</span></div>
+    <ul>
+      <li>Move <code>database.py</code> and <code>allocation.py</code> into a shared Lambda layer imported by every handler; move <code>auth.py</code> into <code>AuthService</code>, swapping the cookie for JWT issuance per §7.1.</li>
+      <li>Write each of the seven handlers in <code>infra/resource-mapping/lba-backend-unified-resource-mapping-layer-oriented.json</code> as a plain function — <code>def lambda_handler(event, context):</code> dispatching on path/method, parsing the API Gateway proxy event directly, returning a dict with <code>statusCode</code>/<code>body</code>. No request object, no dependency injection, no decorators.</li>
+      <li>Write the JWT authorizer Lambda and wire its <code>REQUEST</code> authorizer type into every protected route in <code>template.yaml</code>.</li>
+      <li>Define the Aurora Serverless v2 cluster in <code>template.yaml</code> with the scaling config from the registry (min 0.5 / max 8 ACU), including the new VPC, its two private subnets, and the three security groups (Lambda, Aurora, VPC endpoints) defined in the registry.</li>
+      <li>Test every route with <code>sam local start-api</code> against the existing dev Postgres (Aurora-compatible wire protocol, so local Postgres works fine for this) before touching AWS.</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">Phase 3</span><h3>Frontend: build the component library, then the pages</h3><span class="phase-time">~2–3 weeks</span></div>
+    <ul>
+      <li>Build the 12 components in §5 first — everything else depends on them.</li>
+      <li>Build pages in order of how much they matter to an active LBA: dashboard → farmers → lots/new → lot result/export → farmer detail → settings/users → auth pages.</li>
+      <li>Each page is checked side-by-side against its current Jinja2-rendered counterpart (same screen, same data) before moving to the next.</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">Phase 4</span><h3>Deploy both to AWS/staging, full parity pass</h3><span class="phase-time">~1 week</span></div>
+    <ul>
+      <li><code>sam deploy</code> the backend to a staging AWS account/stage; deploy the frontend build to a staging URL (a Vercel preview deployment works fine for this).</li>
+      <li>Walk every route in §6 end to end on staging: signup → login → upload the real JIMGAF file → create a lot → accept/reject → export → farmer detail → settings.</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <div class="phase-head"><span class="phase-num">Phase 5</span><h3>Cut over</h3><span class="phase-time">ongoing</span></div>
+    <ul>
+      <li>Point the production domain at the new frontend build and the new API Gateway custom domain.</li>
+      <li>Keep the old Vercel + Neon deployment reachable (unlinked from the domain, not deleted) for a rollback window.</li>
+      <li>Only after that window passes cleanly: retire <code>app.py</code>, <code>templates/</code>, and the old Vercel project.</li>
+    </ul>
+  </div>
+
+  <h2 id="effect">9. Effect on the existing app</h2>
+  <ul>
+    <li><strong>Nothing about the live app changes until Phase 5.</strong> Every real LBA account (JIMGAF included) keeps working exactly as today, on the same Vercel + Neon deployment, for the full duration of Phases 1–4. The new work happens in two new directories that nothing in production imports or depends on.</li>
+    <li><strong>Local dev changes from one process to two.</strong> Today it's one <code>uvicorn</code> process. Going forward it's <code>sam local start-api</code> for the backend and <code>vite dev</code> for the frontend, running side by side.</li>
+    <li><strong>Deploys change from one command to two.</strong> <code>vercel --prod</code> for the whole app today becomes <code>sam deploy</code> (backend) + a frontend static deploy (Vercel can still do this — it's just serving a build folder, not running Python), kept independently versioned.</li>
+    <li><strong>This supersedes the compute and database choices in the earlier <a href="aws-provisioning-plan.html">AWS provisioning plan</a> and <a href="cost-estimation.html">cost estimate</a>.</strong> Those documents assumed App Runner/Fargate compute and RDS-or-Neon. The confirmed direction is direct Lambda-to-API-Gateway integrations with no framework, Aurora PostgreSQL Serverless v2, and a new dedicated VPC provisioned for this project — both documents now carry a callout pointing here and to <code>infra/resource-mapping/</code> for the current numbers (~$71/mo at pilot scale, down from ~$125/mo, mainly because Lambda's idle cost is near zero and no new NAT Gateway is needed).</li>
+    <li><strong>No framework means no Mangum dependency and no cold-start-of-a-whole-app penalty.</strong> Each of the seven Lambdas only loads the code its own route needs, not the entire app — a smaller, more auditable blast radius per function than one Lambda running all 26 routes through a framework would have had.</li>
+  </ul>
+
+  <h2 id="dependencies">10. New dependencies</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Where</th><th>Added</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr><td><code>backend/</code></td><td><code>pyjwt</code> (replacing <code>itsdangerous</code>'s cookie role)</td><td>Bearer-token sessions for the SPA and the custom authorizer Lambda (§7.1); <code>bcrypt</code>, <code>psycopg2-binary</code>, <code>openpyxl</code> all carry over unchanged. <code>boto3</code> is already present in the Lambda runtime, used for the S3 presigned URLs (§7.2) — no new dependency.</td></tr>
+        <tr><td><code>backend/</code></td><td>Nothing removed from the list above is a web framework</td><td>Deliberately: no FastAPI, no Flask, no Mangum. Every handler is a plain function the Lambda runtime calls directly.</td></tr>
+        <tr><td><code>backend/</code></td><td>AWS SAM CLI (local tool, not a package)</td><td><code>sam init</code> / <code>sam local start-api</code> / <code>sam deploy</code>.</td></tr>
+        <tr><td><code>frontend/</code></td><td><code>react</code>, <code>react-dom</code>, <code>react-router-dom</code>, <code>typescript</code>, <code>vite</code></td><td>The SPA itself and client-side routing.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer class="doc-foot">
+    <span>Nigeria LBA Level Traceability — internal planning document</span>
+    <span><a href="aws-provisioning-plan.html">&larr; Back: AWS provisioning plan</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

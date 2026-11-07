@@ -18,6 +18,11 @@
   <h1>What it costs to run this, and what to charge for it</h1>
   <p class="subtitle">A hosting-cost model for the Nigeria LBA Level Traceability app once it moves off a single shared Vercel+Neon deployment onto AWS-backed, multi-tenant infrastructure — and what that implies for per-LBA subscription pricing.</p>
 
+  <div class="callout">
+    <strong>Numbers below are superseded by the Lambda-direct architecture</strong>
+    These figures assume App Runner/Fargate compute and an RDS instance. The confirmed direction is now direct Lambda-to-API-Gateway integrations (no FastAPI) against Aurora PostgreSQL Serverless v2, using a new dedicated VPC (no custom VPC existed to reuse) — see <code>infra/resource-mapping/lba-backend-unified-resource-mapping-layer-oriented.json</code> for the current, lower cost model (~$71/mo pilot vs. ~$125/mo below), driven by Lambda's near-zero idle cost and no new NAT Gateway.
+  </div>
+
   <div class="callout warn">
     <strong>Read this before quoting a price</strong>
     Every dollar figure below is a planning estimate assembled from public AWS/Vercel/Neon pricing pages and rate-comparison sites in November 2026, not an invoice. Cloud prices and plan terms change, and real usage always drifts from assumptions. Before you commit to a customer price, re-run the AWS Pricing Calculator and Vercel's own calculator against the <a href="aws-provisioning-plan.html">provisioning plan</a>'s actual instance sizes. Treat this as the thinking, not the quote.
