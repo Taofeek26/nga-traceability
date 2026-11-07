@@ -68,7 +68,7 @@ def lambda_handler(event, context):
     lba_id = int(hu.claims(event)["lba_id"])
 
     if path.endswith("/upload-template"):
-        return _upload_template(event)
+        return _upload_template(event, lba_id)
     if path.endswith("/upload"):
         return _upload_master_data(event, lba_id)
     if path.endswith("/export"):
@@ -86,23 +86,51 @@ def lambda_handler(event, context):
     return hu.error(404, "Not found")
 
 
-def _upload_template(event):
+def _upload_template(event, lba_id):
     deny = hu.require_role(event, ADMIN_ONLY)
     if deny:
         return deny
-    # v2: adds the optional "Net Weight (Kg)" column - bumped so a stale
-    # v1 object already cached in S3 from before this column existed
-    # doesn't keep being served as-is.
-    key = "farmer_master_data_template_v2.xlsx"
-    try:
-        _s3.head_object(Bucket=TEMPLATES_BUCKET, Key=key)
-    except _s3.exceptions.ClientError:
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "Farmers"
-        ws.append(["Farmer Code", "Farmer Full name", "Farmer id", "Gender", "Date of birth",
-                   "Phone number", "NIN", "Community Name", "Num plots", "Total Farm Size Mapped (Ha)",
-                   "Potential Volume", "Net Weight (Kg)"])
+
+    with db.get_conn() as conn:
+        farmers = conn.execute(
+            """
+            SELECT f.farmer_code, f.full_name, f.farmer_uid, f.gender, f.date_of_birth,
+                   f.phone_number, f.nin, f.community, f.num_plots, f.farm_size_ha,
+                   f.potential_volume_kg,
+                   f.opening_delivered_kg
+                       + COALESCE(SUM(a.allocated_volume_kg) FILTER (WHERE l.status = 'accepted'), 0)
+                       AS net_weight
+            FROM farmers f
+            LEFT JOIN lot_allocations a ON a.farmer_id = f.id
+            LEFT JOIN lots l ON l.id = a.lot_id
+            WHERE f.lba_id=%s
+            GROUP BY f.id
+            ORDER BY f.full_name
+            """,
+            (lba_id,),
+        ).fetchall()
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Farmers"
+    ws.append(["Farmer Code", "Farmer Full name", "Farmer id", "Gender", "Date of birth",
+               "Phone number", "NIN", "Community Name", "Num plots", "Total Farm Size Mapped (Ha)",
+               "Potential Volume", "Net Weight (Kg)"])
+
+    if farmers:
+        # Pre-filled with this LBA's current register, including each
+        # farmer's real delivered-to-date as Net Weight - so downloading
+        # the template to make an edit (and re-uploading it) carries that
+        # forward correctly instead of needing it re-entered by hand.
+        for f in farmers:
+            ws.append([
+                f["farmer_code"], f["full_name"], f["farmer_uid"] or "", f["gender"] or "",
+                f["date_of_birth"] or "", f["phone_number"] or "", f["nin"] or "",
+                f["community"] or "", f["num_plots"] or 0, f["farm_size_ha"] or 0,
+                f["potential_volume_kg"], f["net_weight"],
+            ])
+    else:
+        # Nothing uploaded yet for this LBA - the generic example row.
         ws.append(["JIM-OD-OS-14-0002", "Chinedu Okafor", 1473737, "M", "1985-04-12",
                    "08012345678", "12345678901", "Agbor Community", 2, 3.5, 2100, 0])
         ws.append([])
@@ -110,12 +138,18 @@ def _upload_template(event):
                     "history from before you started using this system (e.g. a register you tracked "
                     "manually, or a previous export from here). Leave it at 0, or leave the column "
                     "out entirely, for a farmer with no prior delivery history."])
-        buf = io.BytesIO()
-        wb.save(buf)
-        _s3.put_object(
-            Bucket=TEMPLATES_BUCKET, Key=key, Body=buf.getvalue(),
-            ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
+
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    # Reflects this LBA's live data, so it's generated fresh every call
+    # and scoped per lba_id, rather than the single cached, tenant-blind
+    # object this used to be.
+    key = f"farmer-templates/{lba_id}/farmer_master_data_template.xlsx"
+    _s3.put_object(
+        Bucket=TEMPLATES_BUCKET, Key=key, Body=buf.getvalue(),
+        ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
     url = _s3.generate_presigned_url(
         "get_object",
         Params={"Bucket": TEMPLATES_BUCKET, "Key": key,

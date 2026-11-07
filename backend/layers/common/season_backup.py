@@ -26,6 +26,16 @@ def _row_to_plain(row):
 
 
 def _season_start(conn, lba_id):
+    # A season starts where the previous one left off - the date of this
+    # LBA's last backup (i.e. its last clear). Anchoring every season's
+    # start to the lifetime-first upload instead would make every backup
+    # for this LBA carry the same start date forever, however many times
+    # it's been cleared since - indistinguishable from each other by name.
+    r = conn.execute(
+        "SELECT MAX(created_at) t FROM season_backups WHERE lba_id=%s", (lba_id,)
+    ).fetchone()
+    if r and r["t"]:
+        return r["t"].date().isoformat()
     r = conn.execute(
         "SELECT MIN(created_at) t FROM audit_log WHERE lba_id=%s AND action='farmers.uploaded'",
         (lba_id,),
@@ -82,16 +92,24 @@ def create_backup(conn, s3, bucket, lba_id, created_by_user_id):
         zf.writestr("incentives.json", json.dumps([_row_to_plain(r) for r in incentives]))
     body = buf.getvalue()
 
-    key = f"{SEASON_BACKUPS_PREFIX}/{lba_id}/{season_start}_to_{season_end}.zip"
-    s3.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/zip")
-
+    # The row's own id, not the date range, is what makes this key unique -
+    # two clears on the same calendar day (or, before the _season_start
+    # fix above, any two backups ever for this LBA) would otherwise share
+    # a season_start/season_end pair and silently overwrite each other's
+    # zip in S3, even though their season_backups rows both still exist.
     row = conn.execute(
         """INSERT INTO season_backups
            (lba_id, s3_key, season_start, season_end, n_farmers, n_lots, size_bytes, created_by)
            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-        (lba_id, key, season_start, season_end, len(farmers), len(lots), len(body), created_by_user_id),
+        (lba_id, "", season_start, season_end, len(farmers), len(lots), len(body), created_by_user_id),
     ).fetchone()
-    return {"id": row["id"], "s3_key": key, **manifest}
+    backup_id = row["id"]
+
+    key = f"{SEASON_BACKUPS_PREFIX}/{lba_id}/{backup_id}_{season_start}_to_{season_end}.zip"
+    s3.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/zip")
+    conn.execute("UPDATE season_backups SET s3_key=%s WHERE id=%s", (key, backup_id))
+
+    return {"id": backup_id, "s3_key": key, **manifest}
 
 
 # Explicit column allow-lists for restore, rather than trusting whatever

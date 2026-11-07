@@ -30,6 +30,8 @@ def lambda_handler(event, context):
         return _download(lba_id, backup_id)
     if m == "POST" and path.endswith("/restore"):
         return _restore(event, lba_id, backup_id)
+    if m == "DELETE":
+        return _delete(event, lba_id, backup_id)
     if m == "GET":
         return _list(lba_id)
     return hu.error(404, "Not found")
@@ -93,3 +95,22 @@ def _restore(event, lba_id, backup_id):
             f"{result['n_farmers']} farmers, {result['n_lots']} lots",
         )
     return hu.ok({"ok": True, **result})
+
+
+def _delete(event, lba_id, backup_id):
+    with db.get_conn() as conn:
+        backup = _get_owned_backup(conn, lba_id, backup_id)
+        if not backup:
+            return hu.error(404, "Backup not found.")
+        # Best-effort - if the S3 object is already gone for any reason,
+        # still remove the row rather than leave an undeletable entry.
+        try:
+            _s3.delete_object(Bucket=DOCUMENTS_BUCKET, Key=backup["s3_key"])
+        except Exception:
+            pass
+        conn.execute("DELETE FROM season_backups WHERE id=%s AND lba_id=%s", (backup["id"], lba_id))
+        db.log_audit(
+            conn, lba_id, int(hu.claims(event)["user_id"]), "season_backup.deleted", "season_backup",
+            backup["id"], f"{backup['season_start']} to {backup['season_end']}",
+        )
+    return hu.ok({"ok": True})

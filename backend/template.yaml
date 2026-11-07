@@ -515,6 +515,7 @@ Resources:
         List: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /season-backups, Method: GET}}
         Download: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/season-backups/{id}/download", Method: GET}}
         Restore: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/season-backups/{id}/restore", Method: POST}}
+        Delete: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/season-backups/{id}", Method: DELETE}}
 
 Outputs:
   ApiUrl:

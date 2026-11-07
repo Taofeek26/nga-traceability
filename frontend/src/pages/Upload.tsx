@@ -153,6 +153,22 @@ export default function Upload() {
     }
   }
 
+  async function deleteBackup(id: number, b: SeasonBackup) {
+    if (!confirm(`Permanently delete the ${b.season_start} to ${b.season_end} season backup? This cannot be undone — the ${b.n_farmers} farmer(s) and ${b.n_lots} lot(s) in it will no longer be recoverable.`)) return
+    setBackupBusyId(id)
+    setError('')
+    setMsg('')
+    try {
+      await api.delete(`/season-backups/${id}`)
+      setMsg('Season backup deleted.')
+      reloadBackups()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not delete that backup.')
+    } finally {
+      setBackupBusyId(null)
+    }
+  }
+
   return (
     <>
       <PageHeader title="Master Data" desc="Upload or refresh the farmer register. Re-uploading updates existing farmers (matched by Farmer Code) and adds new ones — nothing is deleted." eyebrow="Administration" />
@@ -249,6 +265,10 @@ export default function Upload() {
                                 title={registerIsEmpty ? '' : 'Clear the current register first'}
                                 onClick={() => restoreBackup(b.id, b)}>
                           <ButtonIcon name="upload" busy={backupBusyId === b.id} />Restore
+                        </button>
+                        <button type="button" className="btn btn--ghost btn--sm" disabled={backupBusyId === b.id}
+                                onClick={() => deleteBackup(b.id, b)}>
+                          <ButtonIcon name="trash" busy={backupBusyId === b.id} />Delete
                         </button>
                       </span>
                     </td>
