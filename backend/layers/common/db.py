@@ -126,6 +126,22 @@ CREATE TABLE IF NOT EXISTS audit_log (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+-- A snapshot of one season's farmer/lot data, taken automatically right
+-- before "Clear all data" wipes it (see layers/common/season_backup.py).
+CREATE TABLE IF NOT EXISTS season_backups (
+    id SERIAL PRIMARY KEY,
+    lba_id INTEGER NOT NULL REFERENCES lbas(id) ON DELETE CASCADE,
+    s3_key TEXT NOT NULL,
+    season_start TEXT,
+    season_end TEXT,
+    n_farmers INTEGER NOT NULL DEFAULT 0,
+    n_lots INTEGER NOT NULL DEFAULT 0,
+    size_bytes INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES users(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    restored_at TIMESTAMPTZ
+);
+
 CREATE INDEX IF NOT EXISTS idx_users_lba ON users(lba_id);
 CREATE INDEX IF NOT EXISTS idx_farmers_lba ON farmers(lba_id);
 CREATE INDEX IF NOT EXISTS idx_lots_lba ON lots(lba_id);
@@ -134,6 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_alloc_lot ON lot_allocations(lot_id);
 CREATE INDEX IF NOT EXISTS idx_incentives_farmer ON incentives(farmer_id);
 CREATE INDEX IF NOT EXISTS idx_documents_lba ON documents(lba_id);
 CREATE INDEX IF NOT EXISTS idx_audit_lba_created ON audit_log(lba_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_season_backups_lba ON season_backups(lba_id);
 """
 
 # Changes made after the first deploy - kept separate from SCHEMA (which is

@@ -1,14 +1,38 @@
 import { useRef, useState, type DragEvent, type FormEvent } from 'react'
+import { useApiGet } from '../api/useApiGet'
 import { api, ApiError } from '../api/client'
 import { Alert, ButtonIcon, Icon, PageHeader } from '../components/ui'
 
+interface SeasonBackup {
+  id: number
+  season_start: string
+  season_end: string
+  n_farmers: number
+  n_lots: number
+  size_bytes: number
+  created_at: string
+  restored_at: string | null
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 export default function Upload() {
+  const { data: backupsData, reload: reloadBackups } =
+    useApiGet<{ backups: SeasonBackup[]; register_is_empty: boolean }>('/season-backups')
+  const backups = backupsData?.backups ?? []
+  const registerIsEmpty = backupsData?.register_is_empty ?? false
+
   const [msg, setMsg] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [templateBusy, setTemplateBusy] = useState(false)
   const [exportBusy, setExportBusy] = useState(false)
   const [clearBusy, setClearBusy] = useState(false)
+  const [backupBusyId, setBackupBusyId] = useState<number | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const [fileName, setFileName] = useState('')
   const fileInput = useRef<HTMLInputElement>(null)
@@ -44,6 +68,7 @@ export default function Upload() {
       setMsg(m)
       setFileName('')
       if (fileInput.current) fileInput.current.value = ''
+      reloadBackups()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Something went wrong.')
     } finally {
@@ -78,19 +103,53 @@ export default function Upload() {
   async function clearAll(e: FormEvent<HTMLFormElement>) {
     e.preventDefault()
     const formEl = e.currentTarget
-    if (!confirm('This permanently deletes every farmer and lot record. Continue?')) return
+    if (!confirm('This clears every farmer and lot record. A backup of the current data is taken automatically first, and you can restore it later. Continue?')) return
     const form = new FormData(formEl)
     setError('')
     setMsg('')
     setClearBusy(true)
     try {
-      await api.post('/farmers/clear-all', { confirm: form.get('confirm') })
-      setMsg('All data cleared.')
+      const resp = await api.post<{ ok: boolean; backup: { season_start: string; season_end: string } | null }>(
+        '/farmers/clear-all', { confirm: form.get('confirm') }
+      )
+      setMsg(resp.backup
+        ? `All data cleared. Backed up as a season covering ${resp.backup.season_start} to ${resp.backup.season_end} — see Season Backups below.`
+        : 'All data cleared.')
       formEl.reset()
+      reloadBackups()
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Type CLEAR exactly to confirm.')
     } finally {
       setClearBusy(false)
+    }
+  }
+
+  async function downloadBackup(id: number) {
+    setBackupBusyId(id)
+    setError('')
+    try {
+      const resp = await api.get<{ download_url: string }>(`/season-backups/${id}/download`)
+      window.open(resp.download_url, '_blank')
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not generate the download link.')
+    } finally {
+      setBackupBusyId(null)
+    }
+  }
+
+  async function restoreBackup(id: number, b: SeasonBackup) {
+    if (!confirm(`Restore the ${b.season_start} to ${b.season_end} season? This brings back ${b.n_farmers} farmer(s) and ${b.n_lots} lot(s).`)) return
+    setBackupBusyId(id)
+    setError('')
+    setMsg('')
+    try {
+      const resp = await api.post<{ ok: boolean; n_farmers: number; n_lots: number }>(`/season-backups/${id}/restore`)
+      setMsg(`Restored: ${resp.n_farmers} farmer(s) and ${resp.n_lots} lot(s) are back.`)
+      reloadBackups()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not restore that season.')
+    } finally {
+      setBackupBusyId(null)
     }
   }
 
@@ -160,12 +219,55 @@ export default function Upload() {
         </div>
       </div>
 
+      <div className="card" style={{ marginTop: 'var(--space-6)' }}>
+        <div className="card__header">
+          <div>
+            <div className="card__title"><Icon name="history" />Season backups</div>
+            <div className="card__subtitle">Taken automatically every time "Clear all data" is used, named by the season it covers. Restore one to look back at a previous season, once your current register is empty.</div>
+          </div>
+        </div>
+        {backups.length > 0 ? (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr><th>Season</th><th className="is-num">Farmers</th><th className="is-num">Lots</th><th>Size</th><th>Status</th><th className="is-action" /></tr>
+              </thead>
+              <tbody>
+                {backups.map((b) => (
+                  <tr key={b.id}>
+                    <td><span className="cell-primary">{b.season_start} &rarr; {b.season_end}</span><span className="cell-secondary">Cleared {b.created_at.slice(0, 10)}</span></td>
+                    <td className="is-num">{b.n_farmers}</td>
+                    <td className="is-num">{b.n_lots}</td>
+                    <td className="is-muted">{formatSize(b.size_bytes)}</td>
+                    <td>{b.restored_at ? <span className="badge badge--ok">Restored</span> : <span className="is-muted">&mdash;</span>}</td>
+                    <td className="is-action">
+                      <span style={{ display: 'inline-flex', gap: 'var(--space-2)' }}>
+                        <button type="button" className="btn btn--ghost btn--sm" disabled={backupBusyId === b.id} onClick={() => downloadBackup(b.id)}>
+                          <ButtonIcon name="download" busy={backupBusyId === b.id} />Download
+                        </button>
+                        <button type="button" className="btn btn--soft btn--sm" disabled={backupBusyId === b.id || !registerIsEmpty}
+                                title={registerIsEmpty ? '' : 'Clear the current register first'}
+                                onClick={() => restoreBackup(b.id, b)}>
+                          <ButtonIcon name="upload" busy={backupBusyId === b.id} />Restore
+                        </button>
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="card__body"><p className="text-muted">No backups yet — one is taken automatically the first time you clear all data.</p></div>
+        )}
+      </div>
+
       <div className="danger-zone" style={{ marginTop: 'var(--space-10)' }}>
         <div className="danger-zone__header">
           <span className="danger-zone__icon"><Icon name="trash" /></span>
           <div>
             <div className="danger-zone__title">Clear all data</div>
-            <p className="danger-zone__text">Removes every farmer, lot, delivery and incentive record for this LBA. Use this to start a new season from scratch. This cannot be undone — there is no backup.</p>
+            <p className="danger-zone__text">Removes every farmer, lot, delivery and incentive record for this LBA. Use this to start a new season from scratch. A full backup is taken automatically first — see Season Backups above to restore it later.</p>
           </div>
         </div>
         <form className="danger-zone__body" onSubmit={clearAll}>

@@ -410,6 +410,7 @@ Resources:
         Variables:
           TEMPLATES_BUCKET: !Ref TemplatesBucket
           EXPORTS_BUCKET: !Ref ExportsBucket
+          DOCUMENTS_BUCKET: !Ref DocumentsBucket
       Policies:
         - Statement:
             - Effect: Allow
@@ -418,6 +419,11 @@ Resources:
         - S3ReadPolicy: {BucketName: !Ref TemplatesBucket}
         - S3CrudPolicy: {BucketName: !Ref TemplatesBucket}
         - S3CrudPolicy: {BucketName: !Ref ExportsBucket}
+        # Season backups (taken by clear-all, right before it wipes this
+        # data) live in the Documents bucket's season-backups/ prefix -
+        # it's the one bucket with no lifecycle expiry, and a season
+        # snapshot needs to last indefinitely, not 7 days.
+        - S3CrudPolicy: {BucketName: !Ref DocumentsBucket}
       Events:
         UploadTemplate: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /farmers/upload-template, Method: GET}}
         Upload: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /farmers/upload, Method: POST}}
@@ -488,6 +494,27 @@ Resources:
         Upload: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /documents, Method: POST}}
         Download: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/documents/{id}/download", Method: GET}}
         Delete: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/documents/{id}", Method: DELETE}}
+
+  SeasonBackupServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/core/season_backup_service/
+      Handler: app.lambda_handler
+      MemorySize: 512
+      Timeout: 120
+      Environment:
+        Variables:
+          DOCUMENTS_BUCKET: !Ref DocumentsBucket
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !GetAtt AuroraCluster.MasterUserSecret.SecretArn
+        - S3CrudPolicy: {BucketName: !Ref DocumentsBucket}
+      Events:
+        List: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: /season-backups, Method: GET}}
+        Download: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/season-backups/{id}/download", Method: GET}}
+        Restore: {Type: HttpApi, Properties: {ApiId: !Ref HttpApi, Path: "/season-backups/{id}/restore", Method: POST}}
 
 Outputs:
   ApiUrl:

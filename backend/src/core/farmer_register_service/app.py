@@ -18,11 +18,13 @@ import psycopg2.errors
 import db
 import http_util as hu
 import multipart_util
+import season_backup
 
 ADMIN_ONLY = {"admin"}
 _s3 = boto3.client("s3")
 TEMPLATES_BUCKET = os.environ.get("TEMPLATES_BUCKET")
 EXPORTS_BUCKET = os.environ.get("EXPORTS_BUCKET")
+DOCUMENTS_BUCKET = os.environ.get("DOCUMENTS_BUCKET")
 
 HEADER_ALIASES = {
     "farmer_code": "farmer_code", "farmers_code": "farmer_code",
@@ -437,7 +439,17 @@ def _clear_all(event, lba_id):
     body = hu.json_body(event)
     if body.get("confirm") != "CLEAR":
         return hu.error(400, "Type CLEAR exactly to confirm.")
+    user_id = int(hu.claims(event)["user_id"])
+
+    backup = None
+    with db.get_conn() as conn:
+        # Snapshot everything clear-all is about to wipe - named by the
+        # season it covers (from the first master-data upload on record
+        # for this LBA, to today) - before it's gone for good.
+        backup = season_backup.create_backup(conn, _s3, DOCUMENTS_BUCKET, lba_id, user_id)
+
     db.wipe_lba_data(lba_id)
     with db.get_conn() as conn:
-        db.log_audit(conn, lba_id, int(hu.claims(event)["user_id"]), "data.cleared", "lba", lba_id, None)
-    return hu.ok({"ok": True})
+        detail = f"backed up as {backup['season_start']}_to_{backup['season_end']}.zip" if backup else None
+        db.log_audit(conn, lba_id, user_id, "data.cleared", "lba", lba_id, detail)
+    return hu.ok({"ok": True, "backup": backup})
