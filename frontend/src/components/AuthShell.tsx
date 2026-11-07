@@ -17,7 +17,6 @@ export default function AuthShell({
           </span>
         </a>
         <h2 className="auth__headline">Every kilo, traced back to a <em>registered farmer</em>.</h2>
-        <p className="auth__lead">Turn a broker lot's total weight and receipt range into a quota-respecting farmer list — ready to export in seconds.</p>
         <p className="auth__foot">JIMGAF Traceability</p>
       </aside>
 
@@ -29,6 +28,7 @@ export default function AuthShell({
               <span className="brand__text"><span className="brand__name">JIMGAF</span><span className="brand__sub">Traceability</span></span>
             </a>
           </div>
+          <h2 className="auth__mobile-headline">Every kilo, traced back to a <em>registered farmer</em>.</h2>
           <h1 className="auth__title">{heading}</h1>
           <p className="auth__desc">{desc}</p>
           {children}
