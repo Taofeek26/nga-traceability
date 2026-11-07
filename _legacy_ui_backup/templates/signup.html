@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Register &middot; Nigeria LBA Level Traceability</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="auth-body">
+  <div class="auth-card">
+    <h1 class="auth-title">Nigeria LBA<br>Level Traceability</h1>
+    <p class="subtitle">Register your LBA. Your farmer data stays private to this account &mdash; no other LBA can see it.</p>
+    {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+    <form method="post" action="/signup">
+      <div class="field">
+        <label>LBA / organisation name</label>
+        <input type="text" name="name" required autofocus placeholder="e.g. Agbor Buying Station">
+      </div>
+      <div class="field">
+        <label>Email</label>
+        <input type="text" name="email" required>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required minlength="8">
+        <p class="hint">At least 8 characters.</p>
+      </div>
+      <div class="field">
+        <label>Confirm password</label>
+        <input type="password" name="confirm_password" required minlength="8">
+      </div>
+      <button class="btn" type="submit" style="width:100%;">Create account</button>
+    </form>
+    <p class="auth-switch">Already registered? <a href="/login">Log in</a></p>
+  </div>
+</body>
+</html>

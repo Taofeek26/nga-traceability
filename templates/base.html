@@ -1,0 +1,89 @@
+{#- App shell for every logged-in page.
+    Child templates set:
+      {% block title %}   → page name only (suffix is added here)
+      {% block crumbs %}  → optional extra breadcrumb items (see farmer_detail.html)
+      {% block topbar_actions %} → optional buttons in the top bar
+      {% block content %} → page body
+      {% set narrow = true %} → narrower content column for form pages -#}
+{% import "macros.html" as ui %}
+{% set path = request.url.path %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2A1B12">
+  <title>{% block title %}Dashboard{% endblock %} · Nigeria LBA Level Traceability</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/ds/tokens.css">
+  <link rel="stylesheet" href="/static/ds/lba-ui.css">
+</head>
+<body>
+{% include "partials/icons.html" %}
+<div class="app">
+  <input type="checkbox" id="nav-toggle" class="nav-toggle" aria-label="Toggle navigation">
+
+  <aside class="sidebar" aria-label="Main navigation">
+    <a class="brand" href="/">
+      <span class="brand__mark">{{ ui.icon("leaf") }}</span>
+      <span class="brand__text">
+        <span class="brand__name">Nigeria LBA</span>
+        <span class="brand__sub">Level Traceability</span>
+      </span>
+    </a>
+
+    <nav class="nav">
+      <div class="nav__section">Overview</div>
+      {{ ui.nav_link("/", "Dashboard", "dashboard", path == "/") }}
+
+      <div class="nav__section">Traceability</div>
+      {% if role in ("admin", "to") %}{{ ui.nav_link("/lots/new", "New Lot", "plus-circle", path == "/lots/new") }}{% endif %}
+      {{ ui.nav_link("/lots", "Lot History", "history", path.startswith("/lots") and path != "/lots/new") }}
+      {{ ui.nav_link("/farmers", "Farmers", "users", path.startswith("/farmers")) }}
+
+      {% if role == "admin" %}
+      <div class="nav__section">Administration</div>
+      {{ ui.nav_link("/upload", "Master Data", "database", path.startswith("/upload")) }}
+      {{ ui.nav_link("/users", "Team", "shield", path.startswith("/users")) }}
+      {{ ui.nav_link("/settings", "Settings", "settings", path == "/settings") }}
+      {% endif %}
+    </nav>
+
+    {% if lba_name %}
+    <div class="sidebar__foot">
+      <div class="account">
+        {{ ui.avatar_name(user_name, "", "gold") }}
+        <div class="account__body">
+          <div class="account__name" title="{{ user_name }}">{{ user_name }}</div>
+          <div class="account__role">{{ role_label }} · {{ lba_name }}</div>
+        </div>
+        <form method="post" action="/logout">
+          <button type="submit" class="account__logout" title="Log out">{{ ui.icon("logout", "sm", "Log out") }}</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+  </aside>
+  <label for="nav-toggle" class="sidebar-overlay" aria-hidden="true"></label>
+
+  <div class="main">
+    <header class="topbar">
+      <label for="nav-toggle" class="btn btn--ghost btn--icon btn--sm topbar__menu" aria-label="Open menu">{{ ui.icon("menu") }}</label>
+      <nav class="breadcrumbs" aria-label="Breadcrumb">
+        <a href="/">Home</a>
+        {% block crumbs %}
+        {{ ui.icon("chevron-right") }}<span aria-current="page">{{ self.title() }}</span>
+        {% endblock %}
+      </nav>
+      <div class="topbar__end">{% block topbar_actions %}{% endblock %}</div>
+    </header>
+
+    <main class="content{% if narrow is defined and narrow %} content--narrow{% endif %}">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+</body>
+</html>

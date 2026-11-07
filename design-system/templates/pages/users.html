@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% set narrow = true %}
+{% block title %}Team{% endblock %}
+{% block content %}
+
+{{ ui.page_header("Team", "Who can access this LBA's account, and what they can do.", eyebrow="Administration") }}
+
+{% if msg %}{{ ui.alert(msg, "success") }}{% endif %}
+{% if error %}{{ ui.alert(error, "error") }}{% endif %}
+
+<div class="card" style="margin-bottom:var(--space-6);">
+  <div class="card__header">
+    <div class="card__title">{{ ui.icon("users") }}Team members</div>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Name</th><th class="hide-sm">Email</th><th>Role</th><th>Status</th><th class="is-action"></th></tr></thead>
+      <tbody>
+      {% for u in team %}
+      <tr>
+        <td>
+          <span class="cell-person">{{ ui.avatar_name(u.name) }}<span class="cell-primary">{{ u.name }}</span></span>
+        </td>
+        <td class="hide-sm is-muted">{{ u.email }}</td>
+        <td><span class="badge badge--gold badge--plain">{{ role_labels[u.role] }}</span></td>
+        <td>{% if u.active %}<span class="badge badge--ok">Active</span>{% else %}<span class="badge badge--inactive">Inactive</span>{% endif %}</td>
+        <td class="is-action">
+          {% if u.id != request.state.user_id %}
+          <form method="post" action="/users/{{ u.id }}/toggle-active">
+            <button class="btn btn--ghost btn--sm" type="submit">{{ "Deactivate" if u.active else "Reactivate" }}</button>
+          </form>
+          {% else %}
+          <span class="text-muted" style="font-size:var(--text-xs);">You</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card__header">
+    <div>
+      <div class="card__title">{{ ui.icon("plus") }}Add a team member</div>
+      <div class="card__subtitle">They'll log in with this email and password directly — there's no invite email to send.</div>
+    </div>
+  </div>
+  <form method="post" action="/users">
+    <div class="card__body">
+      <div class="form-grid">
+        <div class="field">
+          <label class="label" for="user-name">Name</label>
+          <input class="input" id="user-name" type="text" name="name" required>
+        </div>
+        <div class="field">
+          <label class="label" for="user-email">Email</label>
+          <input class="input" id="user-email" type="email" name="email" required>
+        </div>
+        <div class="field">
+          <label class="label" for="user-password">Password</label>
+          <input class="input" id="user-password" type="password" name="password" minlength="8" required>
+          <span class="hint">At least 8 characters.</span>
+        </div>
+        <div class="field">
+          <label class="label" for="user-role">Role</label>
+          <select class="select" id="user-role" name="role" required>
+            <option value="to">Traceability Officer — can create lots, can't touch Master Data/Settings</option>
+            <option value="lba">LBA — can accept/reject lots, can't create them</option>
+            <option value="admin">Admin — full access, only role that can upload Master Data</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="card__footer">
+      <button class="btn btn--primary" type="submit">{{ ui.icon("plus") }}Add team member</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

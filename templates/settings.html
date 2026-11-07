@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% set narrow = true %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+
+{{ ui.page_header("Settings", "Configuration for this LBA account.", eyebrow="Administration") }}
+
+{% if msg %}{{ ui.alert(msg, "success") }}{% endif %}
+
+<form class="card" method="post" action="/settings">
+  <div class="card__body">
+    <div class="form-section">
+      <div>
+        <div class="form-section__title">Premium rate</div>
+        <p class="form-section__desc">Used to calculate each farmer's accrued premium (delivered kg × rate). Set to 0 if you track premium entirely through manual incentive entries.</p>
+      </div>
+      <div class="field" style="max-width:260px;">
+        <label class="label" for="premium-rate">Premium per kg</label>
+        <div class="input-group">
+          <span class="input-group__addon">&#8358;</span>
+          <input class="input" id="premium-rate" type="number" step="0.01" name="premium_rate_per_kg" value="{{ rate }}">
+          <span class="input-group__addon">/ kg</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card__footer">
+    <button class="btn btn--primary" type="submit">{{ ui.icon("check") }}Save changes</button>
+  </div>
+</form>
+{% endblock %}

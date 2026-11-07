@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+jinja2
+python-multipart
+openpyxl
+psycopg2-binary
+bcrypt
+itsdangerous
+python-dotenv

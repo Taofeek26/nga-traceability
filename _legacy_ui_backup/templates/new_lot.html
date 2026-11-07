@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}New Lot · Nigeria LBA Level Traceability{% endblock %}
+{% block content %}
+<h1>New Lot</h1>
+<p class="subtitle">Enter what you actually know about the delivery &mdash; the total volume and the receipt range used. The farmer list is generated automatically from the active register.</p>
+
+{% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+
+{% if n_eligible == 0 %}
+<div class="msg error">No active farmers have remaining quota. Upload a master list first, or check that farmers aren't all at their limit.</div>
+{% endif %}
+
+<div class="card">
+  <form method="post" action="/lots/new">
+    <div class="form-grid">
+      <div class="field">
+        <label>Lot date</label>
+        <input type="date" name="lot_date" value="{{ today }}" required>
+      </div>
+      <div class="field">
+        <label>Total lot volume (kg)</label>
+        <input type="number" step="0.01" min="0.01" name="total_volume_kg" required>
+      </div>
+      <div class="field">
+        <label>Receipt booklet &mdash; start number</label>
+        <input type="number" min="1" name="receipt_start" required>
+      </div>
+      <div class="field">
+        <label>Receipt booklet &mdash; end number</label>
+        <input type="number" min="1" name="receipt_end" required>
+      </div>
+    </div>
+    <div class="field">
+      <label>Note (optional)</label>
+      <input type="text" name="note" placeholder="e.g. broker name, truck number&hellip;">
+    </div>
+    <p class="hint">{{ n_eligible }} farmer(s) currently eligible (active, with remaining quota). The number of receipts (end &minus; start + 1) cannot exceed this.</p>
+    <button class="btn" type="submit">Generate farmer list</button>
+  </form>
+</div>
+{% endblock %}

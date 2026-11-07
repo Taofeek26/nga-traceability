@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% block title %}{{ f.full_name }}{% endblock %}
+{% block crumbs %}
+{{ ui.icon("chevron-right") }}<a href="/farmers">Farmers</a>
+{{ ui.icon("chevron-right") }}<span aria-current="page">{{ f.full_name }}</span>
+{% endblock %}
+{% block content %}
+{% set pct = (delivered / f.potential_volume_kg * 100) if f.potential_volume_kg > 0 else 0 %}
+
+<header class="page-header">
+  <div class="profile">
+    {{ ui.avatar_name(f.full_name, "xl", "gold") }}
+    <div>
+      <h1 class="profile__name">{{ f.full_name }}</h1>
+      <div class="page-header__meta">
+        <span class="code-tag">{{ f.farmer_code }}</span>
+        <span>{{ ui.icon("map-pin", "sm") }}{{ f.community or "No community on file" }}</span>
+        {{ ui.farmer_status(f.active, pct) }}
+      </div>
+    </div>
+  </div>
+  {% if role == "admin" %}
+  <div class="page-header__actions">
+    <form method="post" action="/farmers/{{ f.farmer_code }}/toggle-active">
+      {% if f.active %}
+      <button class="btn btn--secondary" type="submit">{{ ui.icon("power") }}Mark inactive</button>
+      {% else %}
+      <button class="btn btn--primary" type="submit">{{ ui.icon("power") }}Reactivate</button>
+      {% endif %}
+    </form>
+  </div>
+  {% endif %}
+</header>
+
+{% if msg %}{{ ui.alert(msg, "success") }}{% endif %}
+
+<section class="stats">
+  {{ ui.stat("Potential volume", ui.kg(f.potential_volume_kg), "kg", icon_name="leaf", tone="green") }}
+  {{ ui.stat("Delivered (accepted)", ui.kg(delivered), "kg", icon_name="scale", meta=(ui.kg(pending) ~ " kg pending review" if pending else "")) }}
+  {{ ui.stat("Remaining quota", ui.kg(remaining), "kg", icon_name="package", tone="red" if remaining <= 0 else "brown") }}
+  {{ ui.stat("Plots", f.num_plots, icon_name="map-pin", tone="brown", meta=(f.farm_size_ha ~ " ha farm size")) }}
+</section>
+
+<div class="card" style="margin-bottom:var(--space-6);">
+  <div class="card__body">
+    <div class="meter">
+      <div class="meter__head">
+        <span class="meter__label">Quota used</span>
+        <span class="meter__value">{{ "%.0f"|format(pct) }}% · {{ ui.kg(delivered) }} / {{ ui.kg(f.potential_volume_kg) }} kg</span>
+      </div>
+      {{ ui.progress(pct, "lg") }}
+    </div>
+  </div>
+</div>
+
+<div class="grid grid--main-aside">
+  <div class="stack">
+    {# --- Entitlements -------------------------------------------------- #}
+    <div class="card">
+      <div class="card__header">
+        <div>
+          <div class="card__title">{{ ui.icon("wallet") }}Entitlements</div>
+          <div class="card__subtitle">Premium at {{ ui.naira(premium_rate) }}/kg plus logged incentives</div>
+        </div>
+      </div>
+      <div class="summary" style="margin:0;border:0;border-radius:0;box-shadow:none;border-bottom:1px solid var(--color-border-subtle);">
+        <div class="summary__item"><div class="summary__label">Premium accrued</div><div class="summary__value">{{ ui.naira(premium_accrued) }}</div></div>
+        <div class="summary__item"><div class="summary__label">Other incentives</div><div class="summary__value">{{ ui.naira(other_incentives) }}</div></div>
+        <div class="summary__item"><div class="summary__label">Total entitlement</div><div class="summary__value" style="color:var(--gold-hover);">{{ ui.naira(total_entitlement) }}</div></div>
+      </div>
+      {% if role == "admin" %}
+      <div class="card__body">
+        <form method="post" action="/farmers/{{ f.farmer_code }}/incentives">
+          <div class="form-grid">
+            <div class="field">
+              <label class="label" for="inc-type">Type</label>
+              <select class="select" id="inc-type" name="type">
+                <option>Bonus</option>
+                <option>Training stipend</option>
+                <option>Input support</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label" for="inc-amount">Amount</label>
+              <div class="input-group">
+                <span class="input-group__addon">&#8358;</span>
+                <input class="input" id="inc-amount" type="number" step="0.01" name="amount" required>
+              </div>
+            </div>
+            <div class="field">
+              <label class="label" for="inc-date">Date</label>
+              <input class="input" id="inc-date" type="date" name="incentive_date" required>
+            </div>
+            <div class="field">
+              <label class="label" for="inc-note">Note <span class="label__optional">(optional)</span></label>
+              <input class="input" id="inc-note" type="text" name="note">
+            </div>
+          </div>
+          <div class="form-actions">
+            <button class="btn btn--accent" type="submit">{{ ui.icon("plus") }}Add incentive</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+      {% if incentives %}
+      <div class="table-wrap" style="border-top:1px solid var(--color-border-subtle);">
+        <table class="table table--compact">
+          <thead><tr><th>Date</th><th>Type</th><th class="is-num">Amount</th><th class="hide-sm">Note</th></tr></thead>
+          <tbody>
+          {% for i in incentives %}
+          <tr><td>{{ i.incentive_date }}</td><td><span class="badge badge--gold badge--plain">{{ i.type }}</span></td><td class="is-num">{{ ui.naira(i.amount) }}</td><td class="hide-sm is-muted">{{ i.note or "" }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+
+    {# --- Delivery history --------------------------------------------- #}
+    <div class="card">
+      <div class="card__header">
+        <div class="card__title">{{ ui.icon("truck") }}Delivery history</div>
+        {% if deliveries %}<span class="text-muted" style="font-size:var(--text-sm);">{{ deliveries|length }} {{ "delivery" if deliveries|length == 1 else "deliveries" }}</span>{% endif %}
+      </div>
+      <div class="card__body card__body--flush">
+        {% if deliveries %}
+        <div class="table-wrap">
+          <table class="table">
+            <thead><tr><th>Lot date</th><th>Receipt no.</th><th class="is-num">Volume (kg)</th><th>Status</th><th class="is-action"><span class="sr-only">Open</span></th></tr></thead>
+            <tbody>
+            {% for d in deliveries %}
+            <tr>
+              <td>{{ d.lot_date }}</td>
+              <td><span class="mono">{{ d.receipt_number }}</span></td>
+              <td class="is-num">{{ ui.kg(d.allocated_volume_kg, 2) }}</td>
+              <td>{{ ui.lot_status(d.status) }}</td>
+              <td class="is-action"><a class="link-arrow" href="/lots/{{ d.lot_id }}">View lot {{ ui.icon("chevron-right") }}</a></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        {{ ui.empty_state("No deliveries yet", "This farmer hasn't been allocated to any lot.", "truck") }}
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# --- Aside: profile details ----------------------------------------- #}
+  <div class="card">
+    <div class="card__header"><div class="card__title">{{ ui.icon("user") }}Farmer details</div></div>
+    <div class="card__body" style="padding-top:var(--space-2);padding-bottom:var(--space-2);">
+      <dl class="dl">
+        <dt>Farmer code</dt><dd class="mono">{{ f.farmer_code }}</dd>
+        {% if f.farmer_uid %}<dt>Farmer ID</dt><dd class="mono">{{ f.farmer_uid }}</dd>{% endif %}
+        <dt>Gender</dt><dd>{{ f.gender or "—" }}</dd>
+        <dt>Date of birth</dt><dd>{{ f.date_of_birth or "—" }}</dd>
+        <dt>Phone number</dt><dd>{{ f.phone_number or "—" }}</dd>
+        <dt>National ID (NIN)</dt><dd class="mono">{{ f.nin or "—" }}</dd>
+        <dt>Community</dt><dd>{{ f.community or "—" }}</dd>
+        <dt>Plots</dt><dd>{{ f.num_plots }}</dd>
+        <dt>Farm size</dt><dd>{{ f.farm_size_ha }} ha</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+{% endblock %}

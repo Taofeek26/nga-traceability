@@ -1,0 +1,6 @@
+venv/
+__pycache__/
+*.pyc
+.env
+examples/
+_legacy_ui_backup/

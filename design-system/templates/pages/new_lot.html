@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% set narrow = true %}
+{% block title %}New Lot{% endblock %}
+{% block content %}
+
+{{ ui.page_header("Record a new lot", "Enter what you actually know about the delivery — the total volume and the receipt range used. The farmer list is generated automatically from the active register.", eyebrow="Traceability") }}
+
+{% if error %}{{ ui.alert(error, "error") }}{% endif %}
+{% if n_eligible == 0 %}
+{{ ui.alert("Upload a master list first, or check that farmers aren't all at their limit.", "warning", "No active farmers have remaining quota") }}
+{% else %}
+{{ ui.alert(n_eligible ~ " farmer(s) currently eligible (active, with remaining quota). The number of receipts (end − start + 1) cannot exceed this.", "info") }}
+{% endif %}
+
+<form class="card" method="post" action="/lots/new">
+  <div class="card__body">
+    <div class="form-section">
+      <div>
+        <div class="form-section__title">Delivery</div>
+        <p class="form-section__desc">When the lot arrived and its total weighed volume.</p>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label class="label" for="lot-date">Lot date</label>
+          <input class="input" id="lot-date" type="date" name="lot_date" value="{{ today }}" required>
+        </div>
+        <div class="field">
+          <label class="label" for="lot-volume">Total lot volume</label>
+          <div class="input-group">
+            <input class="input" id="lot-volume" type="number" step="0.01" min="0.01" name="total_volume_kg" required placeholder="0.00">
+            <span class="input-group__addon">kg</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div>
+        <div class="form-section__title">Receipt booklet</div>
+        <p class="form-section__desc">The first and last receipt numbers used for this lot. One receipt = one farmer.</p>
+      </div>
+      <div class="field">
+        <span class="label" id="receipt-label">Receipt range</span>
+        <div class="range-pair" role="group" aria-labelledby="receipt-label">
+          <input class="input" type="number" min="1" name="receipt_start" required placeholder="Start, e.g. 1001" aria-label="Start number">
+          <span class="range-pair__sep">–</span>
+          <input class="input" type="number" min="1" name="receipt_end" required placeholder="End, e.g. 1030" aria-label="End number">
+        </div>
+        <span class="hint">Up to {{ n_eligible }} receipts allowed.</span>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div>
+        <div class="form-section__title">Delivery slip details <span class="label__optional">(optional)</span></div>
+        <p class="form-section__desc">From the vehicle's paperwork, if available — appears on the exported delivery slip.</p>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label class="label" for="vehicle-plate">Vehicle plate number</label>
+          <input class="input" id="vehicle-plate" type="text" name="vehicle_plate" placeholder="e.g. NNR 655 XA">
+        </div>
+        <div class="field">
+          <label class="label" for="driver-name">Escort / driver's name</label>
+          <input class="input" id="driver-name" type="text" name="driver_name" placeholder="e.g. Muhammed">
+        </div>
+        <div class="field">
+          <label class="label" for="waybill">Waybill number</label>
+          <input class="input" id="waybill" type="text" name="waybill_number" placeholder="e.g. 0024">
+        </div>
+        <div class="field">
+          <label class="label" for="bags-declared">Number of bags</label>
+          <input class="input" id="bags-declared" type="number" min="1" name="bags_declared" placeholder="e.g. 50">
+          <span class="hint">If given, bags are split across farmers in proportion to their volume share.</span>
+        </div>
+        <div class="field">
+          <label class="label" for="moisture">Moisture / humidity (%)</label>
+          <input class="input" id="moisture" type="number" step="0.1" min="0" max="100" name="moisture_pct" placeholder="e.g. 7.5">
+        </div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div>
+        <div class="form-section__title">Reference</div>
+        <p class="form-section__desc">Anything else that helps identify this lot later.</p>
+      </div>
+      <div class="field">
+        <label class="label" for="lot-note">Note <span class="label__optional">(optional)</span></label>
+        <input class="input" id="lot-note" type="text" name="note" placeholder="e.g. broker name…">
+      </div>
+    </div>
+  </div>
+  <div class="card__footer">
+    <a class="btn btn--ghost" href="/lots">Cancel</a>
+    <button class="btn btn--primary" type="submit"{% if n_eligible == 0 %} disabled{% endif %}>{{ ui.icon("sparkles") }}Generate farmer list</button>
+  </div>
+</form>
+{% endblock %}

@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% block title %}Lot #{{ lot.lot_no }}{% endblock %}
+{% block crumbs %}
+{{ ui.icon("chevron-right") }}<a href="/lots">Lot History</a>
+{{ ui.icon("chevron-right") }}<span aria-current="page">Lot #{{ lot.lot_no }}</span>
+{% endblock %}
+{% block content %}
+
+{% call ui.page_header("Lot #" ~ lot.lot_no, lot.note or "", eyebrow=lot.lot_date) %}
+  {{ ui.lot_status(lot.status) }}
+  <a class="btn btn--secondary" href="/lots/new">{{ ui.icon("plus") }}Record another</a>
+  <a class="btn btn--accent" href="/lots/{{ lot.id }}/export">{{ ui.icon("download") }}Export delivery slip</a>
+{% endcall %}
+
+{% if msg %}{{ ui.alert(msg, "success") }}{% endif %}
+{% if error %}{{ ui.alert(error, "error") }}{% endif %}
+
+{% if lot.status == "pending" %}
+  {% if can_review %}
+  <div class="card" style="margin-bottom:var(--space-5);border:1px solid var(--color-border);">
+    <div class="card__body" style="display:flex;align-items:center;justify-content:space-between;gap:var(--space-4);flex-wrap:wrap;">
+      <div>
+        <strong>This lot is pending review.</strong>
+        <span class="text-muted">Its volume is blocked against each farmer's quota, but won't count as delivered until accepted.</span>
+      </div>
+      <div class="cluster">
+        <form method="post" action="/lots/{{ lot.id }}/reject" onsubmit="return confirm('Reject this lot? Its blocked volume will be released back to each farmer\'s quota.');">
+          <button class="btn btn--secondary" type="submit">{{ ui.icon("x") }}Reject</button>
+        </form>
+        <form method="post" action="/lots/{{ lot.id }}/accept">
+          <button class="btn btn--primary" type="submit">{{ ui.icon("check") }}Accept lot</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  {{ ui.alert("This lot is pending review. An Admin or LBA user needs to accept or reject it before it affects farmer quota.", "warning") }}
+  {% endif %}
+{% elif lot.status == "rejected" %}
+  {{ ui.alert("This lot was rejected" ~ (" by " ~ reviewer if reviewer else "") ~ ". Its volume no longer blocks farmer quota.", "error") }}
+{% elif lot.status == "accepted" %}
+  {{ ui.alert("Accepted" ~ (" by " ~ reviewer if reviewer else "") ~ " — counted against farmer quota and premium.", "success") }}
+{% endif %}
+
+<div class="summary">
+  <div class="summary__item"><div class="summary__label">Lot date</div><div class="summary__value">{{ lot.lot_date }}</div></div>
+  <div class="summary__item"><div class="summary__label">Receipts</div><div class="summary__value mono">{{ lot.receipt_start }}–{{ lot.receipt_end }}</div></div>
+  <div class="summary__item"><div class="summary__label">Farmers</div><div class="summary__value">{{ rows|length }}</div></div>
+  <div class="summary__item"><div class="summary__label">Total volume</div><div class="summary__value">{{ ui.kg(lot.total_volume_kg, 2) }} kg</div></div>
+</div>
+
+{% if lot.vehicle_plate or lot.driver_name or lot.waybill_number or lot.bags_declared or lot.moisture_pct %}
+<div class="summary" style="margin-top:var(--space-3);">
+  {% if lot.vehicle_plate %}<div class="summary__item"><div class="summary__label">Vehicle plate</div><div class="summary__value">{{ lot.vehicle_plate }}</div></div>{% endif %}
+  {% if lot.driver_name %}<div class="summary__item"><div class="summary__label">Escort / driver</div><div class="summary__value">{{ lot.driver_name }}</div></div>{% endif %}
+  {% if lot.waybill_number %}<div class="summary__item"><div class="summary__label">Waybill no.</div><div class="summary__value mono">{{ lot.waybill_number }}</div></div>{% endif %}
+  {% if lot.bags_declared %}<div class="summary__item"><div class="summary__label">Bags declared</div><div class="summary__value">{{ lot.bags_declared }}</div></div>{% endif %}
+  {% if lot.moisture_pct %}<div class="summary__item"><div class="summary__label">Moisture / humidity</div><div class="summary__value">{{ lot.moisture_pct }}%</div></div>{% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <div class="card__header">
+    <div class="card__title">{{ ui.icon("file-sheet") }}Farmer list</div>
+  </div>
+  <div class="table-wrap">
+    <table class="table">
+      <thead><tr><th>Receipt no.</th><th>Farmer</th><th class="hide-sm">Community</th><th class="is-num hide-sm">Bags</th><th class="is-num">Volume (kg)</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><span class="code-tag">{{ r.receipt_number }}</span></td>
+        <td>
+          <a class="cell-person" href="/farmers/{{ r.farmer_code }}" style="text-decoration:none;">
+            {{ ui.avatar_name(r.full_name) }}
+            <span><span class="cell-primary">{{ r.full_name }}</span><span class="cell-secondary mono">{{ r.farmer_code }}</span></span>
+          </a>
+        </td>
+        <td class="hide-sm">{{ r.community or "—" }}</td>
+        <td class="is-num hide-sm">{{ r.num_bags or "—" }}</td>
+        <td class="is-num">{{ ui.kg(r.allocated_volume_kg, 2) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr><td colspan="3">Total</td><td class="is-num hide-sm">{{ rows|sum(attribute="num_bags") or "—" }}</td><td class="is-num">{{ ui.kg(lot.total_volume_kg, 2) }}</td></tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+
+<div class="action-bar">
+  <span class="action-bar__text"><strong>{{ rows|length }} farmers</strong> · {{ ui.kg(lot.total_volume_kg, 2) }} kg · {{ ui.lot_status(lot.status) }}</span>
+  <div class="cluster">
+    <a class="btn btn--secondary" href="/lots/new">Record another</a>
+    <a class="btn btn--accent" href="/lots/{{ lot.id }}/export">{{ ui.icon("download") }}Export .xlsx</a>
+  </div>
+</div>
+{% endblock %}

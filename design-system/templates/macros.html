@@ -1,0 +1,116 @@
+{#- ==========================================================================
+    LBA Design System — Jinja macros
+    Import at the top of any page:   {% import "macros.html" as ui %}
+    Every macro outputs markup that only uses classes from lba-ui.css.
+    ========================================================================== -#}
+
+{# Icon from the inline sprite (partials/icons.html). size: "", "sm", "lg" #}
+{% macro icon(name, size="", label="") -%}
+<svg class="icon{% if size %} icon--{{ size }}{% endif %}"{% if label %} role="img" aria-label="{{ label }}"{% else %} aria-hidden="true"{% endif %}><use href="#i-{{ name }}"/></svg>
+{%- endmacro %}
+
+{# Sidebar nav link. `active` is a boolean computed in base.html #}
+{% macro nav_link(href, label, icon_name, active=False) -%}
+<a class="nav__link{% if active %} is-active{% endif %}" href="{{ href }}"{% if active %} aria-current="page"{% endif %}>{{ icon(icon_name) }}<span>{{ label }}</span></a>
+{%- endmacro %}
+
+{# Page header. Put action buttons in the caller block:
+   {% call ui.page_header("Farmers", "All registered farmers.") %}<a class="btn">…</a>{% endcall %} #}
+{% macro page_header(title, desc="", eyebrow="") -%}
+<header class="page-header">
+  <div>
+    {% if eyebrow %}<div class="page-header__eyebrow">{{ eyebrow }}</div>{% endif %}
+    <h1 class="page-header__title">{{ title }}</h1>
+    {% if desc %}<p class="page-header__desc">{{ desc }}</p>{% endif %}
+  </div>
+  {% if caller is defined %}<div class="page-header__actions">{{ caller() }}</div>{% endif %}
+</header>
+{%- endmacro %}
+
+{# KPI tile. tone: "" (gold), "brown", "green", "red". highlight=True → dark brown tile #}
+{% macro stat(label, value, unit="", icon_name="", meta="", tone="", highlight=False) -%}
+<div class="stat{% if highlight %} stat--highlight{% endif %}">
+  <div class="stat__top">
+    <span class="stat__label">{{ label }}</span>
+    {% if icon_name %}<span class="stat__icon{% if tone %} stat__icon--{{ tone }}{% endif %}">{{ icon(icon_name, "sm") }}</span>{% endif %}
+  </div>
+  <div class="stat__value">{{ value }}{% if unit %}<span class="stat__unit">{{ unit }}</span>{% endif %}</div>
+  {% if meta %}<div class="stat__meta">{{ meta }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Flash message. kind: "success" | "error" | "warning" | "info" #}
+{% macro alert(message, kind="success", title="") -%}
+{% set icons = {"success": "check-circle", "error": "alert-circle", "warning": "alert-triangle", "info": "info"} %}
+<div class="alert alert--{{ kind }}" role="{{ 'alert' if kind == 'error' else 'status' }}">
+  {{ icon(icons[kind]) }}
+  <div class="alert__body">
+    {% if title %}<div class="alert__title">{{ title }}</div>{% endif %}
+    <p>{{ message }}</p>
+  </div>
+</div>
+{%- endmacro %}
+
+{# Farmer quota status badge — single source of truth for thresholds (90% / 100%) #}
+{% macro farmer_status(active, pct) -%}
+{% if not active %}<span class="badge badge--inactive">Inactive</span>
+{% elif pct >= 100 %}<span class="badge badge--full">At limit</span>
+{% elif pct >= 90 %}<span class="badge badge--warn">Near limit</span>
+{% else %}<span class="badge badge--ok">OK</span>{% endif %}
+{%- endmacro %}
+
+{# Progress bar. Colour follows the same thresholds as farmer_status #}
+{% macro progress(pct, size="") -%}
+{% set tone = "danger" if pct >= 100 else ("warn" if pct >= 90 else "") %}
+<div class="progress{% if tone %} progress--{{ tone }}{% endif %}{% if size %} progress--{{ size }}{% endif %}" role="progressbar" aria-valuenow="{{ '%.0f'|format(pct) }}" aria-valuemin="0" aria-valuemax="100">
+  <div class="progress__bar" style="width:{{ [pct, 100]|min }}%"></div>
+</div>
+{%- endmacro %}
+
+{# Compact progress + percentage, for table cells #}
+{% macro mini_meter(pct) -%}
+<div class="mini-meter">{{ progress(pct, "sm") }}<span class="mini-meter__pct">{{ "%.0f"|format(pct) }}%</span></div>
+{%- endmacro %}
+
+{# Lot approval status badge #}
+{% macro lot_status(status) -%}
+{% if status == "accepted" %}<span class="badge badge--ok">Accepted</span>
+{% elif status == "rejected" %}<span class="badge badge--full">Rejected</span>
+{% else %}<span class="badge badge--warn">Pending review</span>{% endif %}
+{%- endmacro %}
+
+{# Initials avatar from first + last name #}
+{% macro avatar(first, last, size="", tone="") -%}
+<span class="avatar{% if size %} avatar--{{ size }}{% endif %}{% if tone %} avatar--{{ tone }}{% endif %}" aria-hidden="true">{{ (first or "?")[:1] }}{{ (last or "")[:1] }}</span>
+{%- endmacro %}
+
+{# Initials avatar from one combined full name #}
+{% macro avatar_name(full_name, size="", tone="") -%}
+{% set parts = (full_name or "?").split() %}
+<span class="avatar{% if size %} avatar--{{ size }}{% endif %}{% if tone %} avatar--{{ tone }}{% endif %}" aria-hidden="true">{{ (parts[0] or "?")[:1] }}{{ (parts[-1] or "")[:1] if parts|length > 1 else "" }}</span>
+{%- endmacro %}
+
+{# Empty state. Optional CTA. #}
+{% macro empty_state(title, text="", icon_name="package", action_href="", action_label="") -%}
+<div class="empty-state">
+  <div class="empty-state__icon">{{ icon(icon_name) }}</div>
+  <div class="empty-state__title">{{ title }}</div>
+  {% if text %}<p class="empty-state__text">{{ text }}</p>{% endif %}
+  {% if action_href %}<a class="btn btn--primary" href="{{ action_href }}">{{ icon("plus") }}{{ action_label }}</a>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Back link shown above page header on detail pages #}
+{% macro back_link(href, label) -%}
+<a class="link-arrow" href="{{ href }}" style="margin-bottom:var(--space-4);display:inline-flex;">{{ icon("arrow-left", "sm") }}{{ label }}</a>
+{%- endmacro %}
+
+{# Kilogram formatting helper: 12345.6 -> "12,346" #}
+{% macro kg(value, decimals=0) -%}
+{{ ("{:,.%df}" % decimals).format(value or 0) }}
+{%- endmacro %}
+
+{# Naira formatting helper #}
+{% macro naira(value) -%}
+&#8358;{{ "{:,.0f}".format(value or 0) }}
+{%- endmacro %}

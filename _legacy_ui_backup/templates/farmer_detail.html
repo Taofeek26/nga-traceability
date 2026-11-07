@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% block title %}{{ f.first_name }} {{ f.surname }} · Nigeria LBA Level Traceability{% endblock %}
+{% block content %}
+<p><a href="/farmers">&larr; All farmers</a></p>
+<h1>{{ f.first_name }} {{ f.surname }}</h1>
+<p class="subtitle">{{ f.farmer_code }} &middot; {{ f.community or "No community on file" }}
+  {% if not f.active %}&middot; <span class="badge inactive">Inactive</span>{% endif %}
+</p>
+
+{% if msg %}<div class="msg ok">{{ msg }}</div>{% endif %}
+
+<div class="stat-row">
+  <div class="stat"><span class="num">{{ "%.0f"|format(f.potential_volume_kg) }} kg</span><span class="label">Potential volume</span></div>
+  <div class="stat"><span class="num">{{ "%.0f"|format(delivered) }} kg</span><span class="label">Delivered so far</span></div>
+  <div class="stat"><span class="num">{{ "%.0f"|format(remaining) }} kg</span><span class="label">Remaining quota</span></div>
+  <div class="stat"><span class="num">{{ f.num_plots }}</span><span class="label">Plots &middot; {{ f.farm_size_ha }} ha</span></div>
+</div>
+
+<div class="card">
+  {% set pct = (delivered / f.potential_volume_kg * 100) if f.potential_volume_kg > 0 else 0 %}
+  <div class="progress{% if pct >= 100 %} danger{% endif %}"><div style="width:{{ [pct, 100]|min }}%"></div></div>
+  <p class="hint">{{ "%.0f"|format(pct) }}% of potential volume delivered</p>
+</div>
+
+<div class="card">
+  <h3>Farmer details</h3>
+  <table>
+    <tr><td>Gender</td><td>{{ f.gender or "&mdash;" }}</td></tr>
+    <tr><td>Date of birth</td><td>{{ f.date_of_birth or "&mdash;" }}</td></tr>
+    <tr><td>Phone number</td><td>{{ f.phone_number or "&mdash;" }}</td></tr>
+    <tr><td>National ID (NIN)</td><td>{{ f.nin or "&mdash;" }}</td></tr>
+  </table>
+  <form class="inline" method="post" action="/farmers/{{ f.farmer_code }}/toggle-active" style="margin-top:12px;">
+    <button class="btn secondary" type="submit">{{ "Reactivate" if not f.active else "Mark inactive" }}</button>
+  </form>
+</div>
+
+<h2>Entitlements</h2>
+<div class="stat-row">
+  <div class="stat"><span class="num">&#8358;{{ "%.0f"|format(premium_accrued) }}</span><span class="label">Premium accrued ({{ premium_rate }}/kg)</span></div>
+  <div class="stat"><span class="num">&#8358;{{ "%.0f"|format(other_incentives) }}</span><span class="label">Other incentives</span></div>
+  <div class="stat"><span class="num">&#8358;{{ "%.0f"|format(total_entitlement) }}</span><span class="label">Total entitlement</span></div>
+</div>
+
+<div class="card">
+  <h3>Record an incentive</h3>
+  <form method="post" action="/farmers/{{ f.farmer_code }}/incentives">
+    <div class="form-grid">
+      <div class="field">
+        <label>Type</label>
+        <select name="type">
+          <option>Bonus</option>
+          <option>Training stipend</option>
+          <option>Input support</option>
+          <option>Other</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Amount (&#8358;)</label>
+        <input type="number" step="0.01" name="amount" required>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" name="incentive_date" required>
+      </div>
+      <div class="field">
+        <label>Note</label>
+        <input type="text" name="note" placeholder="Optional">
+      </div>
+    </div>
+    <button class="btn gold" type="submit">Add incentive</button>
+  </form>
+
+  {% if incentives %}
+  <table style="margin-top:18px;">
+    <tr><th>Date</th><th>Type</th><th class="num">Amount</th><th>Note</th></tr>
+    {% for i in incentives %}
+    <tr><td>{{ i.incentive_date }}</td><td>{{ i.type }}</td><td class="num">&#8358;{{ "%.0f"|format(i.amount) }}</td><td>{{ i.note or "" }}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+<h2>Delivery history</h2>
+<div class="card">
+  {% if deliveries %}
+  <table>
+    <tr><th>Lot date</th><th>Receipt no.</th><th class="num">Volume (kg)</th><th></th></tr>
+    {% for d in deliveries %}
+    <tr>
+      <td>{{ d.lot_date }}</td>
+      <td>{{ d.receipt_number }}</td>
+      <td class="num">{{ "%.2f"|format(d.allocated_volume_kg) }}</td>
+      <td><a href="/lots/{{ d.lot_id }}">View lot &rarr;</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="empty">No deliveries recorded for this farmer yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

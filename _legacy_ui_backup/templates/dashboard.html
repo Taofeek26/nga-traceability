@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Nigeria LBA Level Traceability{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+<p class="subtitle">Current state of the farmer register and deliveries.</p>
+
+<div class="stat-row">
+  <div class="stat"><span class="num">{{ n_farmers }}</span><span class="label">Farmers on file ({{ n_active }} active)</span></div>
+  <div class="stat"><span class="num">{{ "%.0f"|format(potential) }} kg</span><span class="label">Total potential volume</span></div>
+  <div class="stat"><span class="num">{{ "%.0f"|format(delivered) }} kg</span><span class="label">Delivered so far</span></div>
+  <div class="stat"><span class="num">{{ n_lots }}</span><span class="label">Lots recorded</span></div>
+</div>
+
+<div class="card">
+  <h3>Get started</h3>
+  <p>1. Upload or refresh your farmer master list &rarr; <a href="/upload">Master Data</a><br>
+     2. When a lot arrives, enter its volume and receipt range &rarr; <a href="/lots/new">New Lot</a><br>
+     3. The farmer list is generated automatically, ready to export.</p>
+</div>
+
+<h2>Recent lots</h2>
+<div class="card">
+  {% if recent_lots %}
+  <table>
+    <tr><th>Date</th><th>Receipts</th><th class="num">Volume (kg)</th><th></th></tr>
+    {% for l in recent_lots %}
+    <tr>
+      <td>{{ l.lot_date }}</td>
+      <td>{{ l.receipt_start }}&ndash;{{ l.receipt_end }}</td>
+      <td class="num">{{ "%.1f"|format(l.total_volume_kg) }}</td>
+      <td><a href="/lots/{{ l.id }}">View farmer list &rarr;</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="empty">No lots recorded yet.</p>
+  {% endif %}
+</div>
+
+{% if near_limit %}
+<h2>Farmers near their limit</h2>
+<div class="card">
+  <table>
+    <tr><th>Farmer</th><th class="num">Potential (kg)</th><th class="num">Delivered (kg)</th><th class="num">Remaining (kg)</th></tr>
+    {% for f in near_limit %}
+    <tr>
+      <td><a href="/farmers/{{ f.farmer_code }}">{{ f.first_name }} {{ f.surname }}</a></td>
+      <td class="num">{{ "%.0f"|format(f.potential_volume_kg) }}</td>
+      <td class="num">{{ "%.0f"|format(f.delivered) }}</td>
+      <td class="num">{{ "%.0f"|format(f.potential_volume_kg - f.delivered) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+{% endblock %}

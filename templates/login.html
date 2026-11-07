@@ -1,0 +1,20 @@
+{% extends "auth_base.html" %}
+{% block title %}Log in{% endblock %}
+{% block heading %}Welcome back{% endblock %}
+{% block desc %}Log in to your LBA's account.{% endblock %}
+{% block form %}
+<form method="post" action="/login">
+  <div class="field">
+    <label class="label" for="email">Email</label>
+    <input class="input" id="email" type="email" name="email" required autofocus autocomplete="email" placeholder="you@lba.ng">
+  </div>
+  <div class="field">
+    <label class="label" for="password">Password</label>
+    <input class="input" id="password" type="password" name="password" required autocomplete="current-password">
+  </div>
+  <div class="form-actions">
+    <button class="btn btn--primary btn--lg btn--block" type="submit">Log in</button>
+  </div>
+</form>
+{% endblock %}
+{% block switch %}No account yet? <a href="/signup">Register your LBA</a>{% endblock %}

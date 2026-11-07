@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Lot #{{ lot.id }} · Nigeria LBA Level Traceability{% endblock %}
+{% block content %}
+<p><a href="/lots">&larr; Lot history</a></p>
+<h1>Lot #{{ lot.id }} &mdash; {{ lot.lot_date }}</h1>
+<p class="subtitle">Receipts {{ lot.receipt_start }}&ndash;{{ lot.receipt_end }} &middot; {{ "%.2f"|format(lot.total_volume_kg) }} kg total
+  {% if lot.note %}&middot; {{ lot.note }}{% endif %}
+</p>
+
+<div class="msg ok">Farmer list generated: {{ rows|length }} farmer(s), volumes randomly split within each farmer's remaining quota.</div>
+
+<div class="card">
+  <table>
+    <tr><th>Receipt No.</th><th>Farmer Code</th><th>Name</th><th>Community</th><th class="num">Volume (kg)</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.receipt_number }}</td>
+      <td><a href="/farmers/{{ r.farmer_code }}">{{ r.farmer_code }}</a></td>
+      <td>{{ r.first_name }} {{ r.surname }}</td>
+      <td>{{ r.community or "" }}</td>
+      <td class="num">{{ "%.2f"|format(r.allocated_volume_kg) }}</td>
+    </tr>
+    {% endfor %}
+    <tr><td colspan="4"><strong>Total</strong></td><td class="num"><strong>{{ "%.2f"|format(lot.total_volume_kg) }}</strong></td></tr>
+  </table>
+</div>
+
+<a class="btn gold" href="/lots/{{ lot.id }}/export">Export farmer list (.xlsx)</a>
+<a class="btn secondary" href="/lots/new">Record another lot</a>
+{% endblock %}

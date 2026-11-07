@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% block title %}Farmers{% endblock %}
+{% block content %}
+
+{% call ui.page_header("Farmers", farmers|length ~ " farmer(s)" ~ (" matching “" ~ q ~ "”" if q else " in your register") ~ ".") %}
+  <a class="btn btn--soft" href="/farmers/export">{{ ui.icon("download") }}Export</a>
+  {% if role == "admin" %}<a class="btn btn--secondary" href="/upload">{{ ui.icon("upload") }}Import from Excel</a>{% endif %}
+{% endcall %}
+
+<div class="card">
+  <form class="toolbar" method="get" action="/farmers" role="search">
+    <div class="input-group input-group--icon toolbar__search">
+      <span class="input-group__icon">{{ ui.icon("search") }}</span>
+      <input class="input" type="search" name="q" value="{{ q }}" placeholder="Search name, code or community…" aria-label="Search farmers">
+    </div>
+    {% if q %}<a class="btn btn--ghost btn--sm" href="/farmers">{{ ui.icon("x") }}Clear</a>{% endif %}
+    <div class="toolbar__end text-muted" style="font-size:var(--text-sm);">{{ farmers|length }} result(s)</div>
+  </form>
+
+  {% if farmers %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Farmer</th>
+          <th class="hide-sm">Community</th>
+          <th class="is-num hide-sm">Potential (kg)</th>
+          <th class="is-num hide-sm">Delivered (kg)</th>
+          <th class="is-num hide-sm">Remaining (kg)</th>
+          <th class="hide-sm">Quota used</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for f in farmers %}
+      {% set remaining = f.potential_volume_kg - f.delivered %}
+      {% set pct = (f.delivered / f.potential_volume_kg * 100) if f.potential_volume_kg > 0 else 0 %}
+      <tr>
+        <td>
+          <a class="cell-person" href="/farmers/{{ f.farmer_code }}" style="text-decoration:none;">
+            {{ ui.avatar_name(f.full_name) }}
+            <span><span class="cell-primary">{{ f.full_name }}</span><span class="cell-secondary mono">{{ f.farmer_code }}</span></span>
+          </a>
+        </td>
+        <td class="hide-sm">{{ f.community or "—" }}</td>
+        <td class="is-num hide-sm">{{ ui.kg(f.potential_volume_kg) }}</td>
+        <td class="is-num hide-sm">{{ ui.kg(f.delivered) }}</td>
+        <td class="is-num hide-sm">{{ ui.kg(remaining) }}</td>
+        <td class="hide-sm">{{ ui.mini_meter(pct) }}</td>
+        <td>{{ ui.farmer_status(f.active, pct) }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif q %}
+  {{ ui.empty_state("No farmers match “" ~ q ~ "”", "Try a different name, farmer code or community.", "search") }}
+  {% else %}
+  {{ ui.empty_state("No farmers yet", "Upload your farmer master list to build the register.", "users", "/upload", "Upload master list") }}
+  {% endif %}
+</div>
+{% endblock %}

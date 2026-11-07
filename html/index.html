@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LBA Traceability — Ops Docs</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="doc-nav">
+    <span>Nigeria LBA Level Traceability</span>
+    <span>Updated 2026-11-04</span>
+  </div>
+
+  <p class="eyebrow">Business &amp; Infrastructure</p>
+  <h1>Taking the MVP to a paid, multi-tenant product</h1>
+  <p class="subtitle">Two planning documents for the move from a single-tenant pilot on Vercel+Neon to AWS-backed infrastructure that can be sold to multiple LBAs.</p>
+
+  <div class="tier-grid" style="margin-top:2rem;">
+    <div class="tier-card" style="grid-column: span 1;">
+      <div class="label">Doc 1</div>
+      <h2 style="margin:0.3rem 0 0.5rem; padding-top:0; border-top:none; font-size:1.2rem;"><a href="cost-estimation.html">Cost estimation</a></h2>
+      <p style="margin:0; font-size:0.88rem; max-width:none;">AWS + Vercel hosting costs at three scale points, a Neon-vs-RDS database comparison, and what it implies for per-LBA subscription pricing and margin.</p>
+    </div>
+    <div class="tier-card" style="grid-column: span 1;">
+      <div class="label">Doc 2</div>
+      <h2 style="margin:0.3rem 0 0.5rem; padding-top:0; border-top:none; font-size:1.2rem;"><a href="aws-provisioning-plan.html">AWS provisioning plan</a></h2>
+      <p style="margin:0; font-size:0.88rem; max-width:none;">The architecture decision behind "backend on AWS, frontend on Vercel," a target-architecture diagram, and a phased rollout from foundations through cutover.</p>
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:2.5rem;">
+    <strong>Read order</strong>
+    Start with the provisioning plan's first section if you want the architecture decision; start with the cost estimation if you want the pricing bottom line first. Each links to the other at the relevant section.
+  </div>
+
+  <footer class="doc-foot">
+    <span>Internal planning documents — not for external distribution</span>
+    <span></span>
+  </footer>
+
+</div>
+</body>
+</html>

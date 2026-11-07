@@ -1,0 +1,31 @@
+{% extends "auth_base.html" %}
+{% block title %}Register{% endblock %}
+{% block heading %}Register your LBA{% endblock %}
+{% block desc %}Your farmer data stays private to this account — no other LBA can see it.{% endblock %}
+{% block form %}
+<form method="post" action="/signup">
+  <div class="field">
+    <label class="label" for="name">LBA / organisation name</label>
+    <input class="input" id="name" type="text" name="name" required autofocus placeholder="e.g. Agbor Buying Station" autocomplete="organization">
+  </div>
+  <div class="field">
+    <label class="label" for="email">Email</label>
+    <input class="input" id="email" type="email" name="email" required autocomplete="email">
+  </div>
+  <div class="form-grid" style="margin-top:var(--space-5);">
+    <div class="field">
+      <label class="label" for="password">Password</label>
+      <input class="input" id="password" type="password" name="password" required minlength="8" autocomplete="new-password">
+      <span class="hint">At least 8 characters.</span>
+    </div>
+    <div class="field">
+      <label class="label" for="confirm_password">Confirm password</label>
+      <input class="input" id="confirm_password" type="password" name="confirm_password" required minlength="8" autocomplete="new-password">
+    </div>
+  </div>
+  <div class="form-actions">
+    <button class="btn btn--primary btn--lg btn--block" type="submit">Create account</button>
+  </div>
+</form>
+{% endblock %}
+{% block switch %}Already registered? <a href="/login">Log in</a>{% endblock %}

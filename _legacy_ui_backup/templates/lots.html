@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Lot History · Nigeria LBA Level Traceability{% endblock %}
+{% block content %}
+<h1>Lot History</h1>
+<p class="subtitle">{{ lots|length }} lot(s) recorded.</p>
+<p><a class="btn" href="/lots/new">+ New lot</a></p>
+
+<div class="card">
+  {% if lots %}
+  <table>
+    <tr><th>Date</th><th>Receipts</th><th class="num">Farmers</th><th class="num">Volume (kg)</th><th>Note</th><th></th></tr>
+    {% for l in lots %}
+    <tr>
+      <td>{{ l.lot_date }}</td>
+      <td>{{ l.receipt_start }}&ndash;{{ l.receipt_end }}</td>
+      <td class="num">{{ l.n_farmers }}</td>
+      <td class="num">{{ "%.2f"|format(l.total_volume_kg) }}</td>
+      <td>{{ l.note or "" }}</td>
+      <td><a href="/lots/{{ l.id }}">View &rarr;</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="empty">No lots recorded yet. <a href="/lots/new">Record the first one</a>.</p>
+  {% endif %}
+</div>
+{% endblock %}

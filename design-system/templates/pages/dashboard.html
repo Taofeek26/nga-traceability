@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% block title %}Dashboard{% endblock %}
+{% block crumbs %}{% endblock %}
+{% block content %}
+
+{% call ui.page_header("Dashboard", "Current state of your farmer register and deliveries.", eyebrow=lba_name or "Overview") %}
+  {% if role == "admin" %}<a class="btn btn--secondary" href="/upload">{{ ui.icon("upload") }}Update master data</a>{% endif %}
+  {% if role in ("admin", "to") %}<a class="btn btn--accent" href="/lots/new">{{ ui.icon("plus") }}New lot</a>{% endif %}
+{% endcall %}
+
+{% if error %}{{ ui.alert(error, "error") }}{% endif %}
+
+{% set used_pct = (delivered / potential * 100) if potential > 0 else 0 %}
+<section class="stats">
+  {{ ui.stat("Farmers on file", n_farmers, icon_name="users", tone="brown", meta=n_active ~ " active") }}
+  {{ ui.stat("Potential volume", ui.kg(potential), "kg", icon_name="leaf", tone="green", meta="Season capacity of the register") }}
+  {{ ui.stat("Delivered (accepted)", ui.kg(delivered), "kg", icon_name="scale", meta="%.0f"|format(used_pct) ~ "% of potential used") }}
+  {{ ui.stat("Pending review", ui.kg(pending), "kg", icon_name="receipt", tone="", meta=n_pending_lots ~ " lot(s) awaiting accept/reject") }}
+  {{ ui.stat("Lots recorded", n_lots, icon_name="package", highlight=True, meta="All time") }}
+</section>
+
+{% if n_lots == 0 %}
+<div class="card" style="margin-bottom:var(--space-6);">
+  <div class="card__header">
+    <div>
+      <div class="card__title">{{ ui.icon("sparkles") }}Get started</div>
+      <div class="card__subtitle">Three steps from master list to export-ready farmer list.</div>
+    </div>
+  </div>
+  <div class="card__body">
+    <ol class="steps">
+      <li class="step{% if n_farmers > 0 %} is-done{% endif %}">
+        <span class="step__num"></span>
+        <span class="step__title">Upload your master list</span>
+        <span class="step__text">Add or refresh the farmer register from Excel.</span>
+        <a class="link-arrow" href="/upload">Master Data {{ ui.icon("arrow-right") }}</a>
+      </li>
+      <li class="step">
+        <span class="step__num"></span>
+        <span class="step__title">Record a lot</span>
+        <span class="step__text">Enter the total volume and receipt range used.</span>
+        <a class="link-arrow" href="/lots/new">New Lot {{ ui.icon("arrow-right") }}</a>
+      </li>
+      <li class="step">
+        <span class="step__num"></span>
+        <span class="step__title">Export the farmer list</span>
+        <span class="step__text">The list is generated automatically and exports to .xlsx.</span>
+      </li>
+    </ol>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid grid--main-aside">
+  <div class="card">
+    <div class="card__header">
+      <div class="card__title">Recent lots</div>
+      <a class="link-arrow" href="/lots">View all {{ ui.icon("arrow-right") }}</a>
+    </div>
+    <div class="card__body card__body--flush">
+      {% if recent_lots %}
+      <div class="table-wrap">
+        <table class="table">
+          <thead><tr><th>Date</th><th>Receipts</th><th class="is-num">Volume (kg)</th><th>Status</th><th class="is-action"><span class="sr-only">Open</span></th></tr></thead>
+          <tbody>
+          {% for l in recent_lots %}
+          <tr>
+            <td><span class="cell-primary">{{ l.lot_date }}</span><span class="cell-secondary">Lot #{{ l.lot_no }}</span></td>
+            <td><span class="mono">{{ l.receipt_start }}–{{ l.receipt_end }}</span></td>
+            <td class="is-num">{{ ui.kg(l.total_volume_kg, 1) }}</td>
+            <td>{{ ui.lot_status(l.status) }}</td>
+            <td class="is-action"><a class="link-arrow" href="/lots/{{ l.id }}">Farmer list {{ ui.icon("chevron-right") }}</a></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      {{ ui.empty_state("No lots recorded yet", "When a lot arrives, enter its volume and receipt range to generate the farmer list.", "package", "/lots/new", "Record first lot") }}
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card__header">
+      <div>
+        <div class="card__title">Near their limit</div>
+        <div class="card__subtitle">Active farmers at 90%+ of potential</div>
+      </div>
+      {% if near_limit %}<span class="badge badge--warn">{{ near_limit|length }}</span>{% endif %}
+    </div>
+    <div class="card__body">
+      {% if near_limit %}
+      <div class="stack-sm">
+        {% for f in near_limit %}
+        {% set pct = f.delivered / f.potential_volume_kg * 100 %}
+        <a class="cell-person" href="/farmers/{{ f.farmer_code }}" style="text-decoration:none;">
+          {{ ui.avatar_name(f.full_name) }}
+          <div style="flex:1;min-width:0;">
+            <div class="meter__head" style="margin-bottom:6px;">
+              <span class="cell-primary">{{ f.full_name }}</span>
+              <span class="text-muted num" style="font-size:var(--text-xs);">{{ ui.kg(f.potential_volume_kg - f.delivered) }} kg left</span>
+            </div>
+            {{ ui.progress(pct, "sm") }}
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state" style="padding:var(--space-6) 0;">
+        <div class="empty-state__icon">{{ ui.icon("check") }}</div>
+        <p class="empty-state__text">No farmers are close to their quota.</p>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cost Estimation</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="page">
+
+  <div class="doc-nav">
+    <span><a href="index.html">&larr; LBA Traceability — Ops Docs</a></span>
+    <span>Updated 2026-11-04</span>
+  </div>
+
+  <p class="eyebrow">Infrastructure &amp; Pricing</p>
+  <h1>What it costs to run this, and what to charge for it</h1>
+  <p class="subtitle">A hosting-cost model for the Nigeria LBA Level Traceability app once it moves off a single shared Vercel+Neon deployment onto AWS-backed, multi-tenant infrastructure — and what that implies for per-LBA subscription pricing.</p>
+
+  <div class="callout warn">
+    <strong>Read this before quoting a price</strong>
+    Every dollar figure below is a planning estimate assembled from public AWS/Vercel/Neon pricing pages and rate-comparison sites in November 2026, not an invoice. Cloud prices and plan terms change, and real usage always drifts from assumptions. Before you commit to a customer price, re-run the AWS Pricing Calculator and Vercel's own calculator against the <a href="aws-provisioning-plan.html">provisioning plan</a>'s actual instance sizes. Treat this as the thinking, not the quote.
+  </div>
+
+  <h2 id="assumptions">1. What one "LBA" costs to serve</h2>
+  <p>An LBA (Licensed Buying Agent) is one tenant: its own farmer register, its own lot history, its own users. From the real JIMGAF data already in this app, a typical tenant looks like:</p>
+  <ul>
+    <li>500–2,000 registered farmers</li>
+    <li>3–10 staff accounts (admin / TO / LBA roles), active mostly during business hours</li>
+    <li>Tens to a few hundred lots recorded per month, spiking in harvest season</li>
+    <li>One .xlsx delivery-slip export per lot, one bulk farmer-register upload per season</li>
+  </ul>
+  <p>None of that is heavy by cloud standards — this is a CRUD-and-forms app, not a video pipeline. The cost story here is almost entirely about <em>how many LBAs share the same infrastructure</em>, not about any one LBA's usage.</p>
+
+  <h2 id="architecture">2. The infrastructure being priced</h2>
+  <p>Per the <a href="aws-provisioning-plan.html">provisioning plan</a>, "backend on AWS, frontend on Vercel" splits the app into a UI tier (Vercel, serving the pages as today) and a stateful API tier (AWS, holding the database and doing the real work). Four cost centers follow from that split:</p>
+  <ul>
+    <li><strong>AWS compute</strong> — the FastAPI service that used to be a single Vercel function, now running on AWS App Runner (pilot/growth) or ECS Fargate behind a load balancer (scale).</li>
+    <li><strong>Database</strong> — either staying on Neon (usage-based serverless Postgres, zero migration) or moving to Amazon RDS/Aurora for Postgres (flat-rate instances, more control, needed once compliance or private networking matters).</li>
+    <li><strong>Supporting AWS services</strong> — S3 for export/backup storage, Secrets Manager, Route 53, CloudWatch, and (once this is paid-for infrastructure with outside traffic) AWS WAF.</li>
+    <li><strong>Vercel</strong> — the UI tier's hosting plan, since a paid commercial product needs a Pro (or Enterprise) plan rather than the free Hobby tier.</li>
+  </ul>
+
+  <h2 id="tiers">3. Three points on the growth curve</h2>
+  <p>Infrastructure doesn't scale linearly with tenant count — fixed costs (load balancer, logging, DNS) get shared across more LBAs as the platform grows, so the cost <em>per LBA</em> should fall as you add customers. The three tiers below show that curve.</p>
+
+  <div class="tier-grid">
+    <div class="tier-card">
+      <div class="label">Pilot — 1 to 5 LBAs</div>
+      <div class="figure">~$125<span style="font-size:0.9rem;">/mo</span></div>
+      <div class="sub">$25–$125 per LBA/month</div>
+    </div>
+    <div class="tier-card">
+      <div class="label">Growth — 10 to 25 LBAs</div>
+      <div class="figure">~$500<span style="font-size:0.9rem;">/mo</span></div>
+      <div class="sub">$20–$50 per LBA/month</div>
+    </div>
+    <div class="tier-card">
+      <div class="label">Scale — 50 to 100 LBAs</div>
+      <div class="figure">~$1,200<span style="font-size:0.9rem;">/mo</span></div>
+      <div class="sub">$12–$24 per LBA/month</div>
+    </div>
+  </div>
+
+  <h3>Pilot — 1 to 5 LBAs on the platform</h3>
+  <p>One always-on App Runner instance sized for light, bursty traffic; the database stays small; a single Vercel seat covers the UI tier.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Line item</th><th>Service</th><th class="num">Monthly</th></tr></thead>
+      <tbody>
+        <tr><td>Backend compute</td><td>AWS App Runner, 1 vCPU / 2 GB, mixed active + idle</td><td class="num">$50</td></tr>
+        <tr><td>Database</td><td>Amazon RDS for PostgreSQL, db.t4g.micro, Multi-AZ, 20 GB</td><td class="num">$30</td></tr>
+        <tr><td>Supporting services</td><td>S3, Secrets Manager, Route 53, CloudWatch, WAF (basic)</td><td class="num">$25</td></tr>
+        <tr><td>Frontend hosting</td><td>Vercel Pro, 1 seat</td><td class="num">$20</td></tr>
+      </tbody>
+      <tfoot><tr><td colspan="2">Total</td><td class="num">$125</td></tr></tfoot>
+    </table>
+  </div>
+
+  <h3>Growth — 10 to 25 LBAs</h3>
+  <p>Traffic justifies 2–3 autoscaled App Runner instances and a bigger database instance; a second Vercel seat and a few compliance-grade extras (WAF rules, log retention) come online.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Line item</th><th>Service</th><th class="num">Monthly</th></tr></thead>
+      <tbody>
+        <tr><td>Backend compute</td><td>AWS App Runner, 2–3 instances, 2 vCPU / 4 GB, autoscaled</td><td class="num">$280</td></tr>
+        <tr><td>Database</td><td>Amazon RDS for PostgreSQL, db.t4g.medium, Multi-AZ, 50 GB</td><td class="num">$100</td></tr>
+        <tr><td>Supporting services</td><td>S3, Secrets Manager, Route 53, CloudWatch, WAF, data transfer</td><td class="num">$55</td></tr>
+        <tr><td>Frontend hosting</td><td>Vercel Pro, 2 seats + light overage</td><td class="num">$60</td></tr>
+      </tbody>
+      <tfoot><tr><td colspan="2">Total</td><td class="num">$495</td></tr></tfoot>
+    </table>
+  </div>
+
+  <h3>Scale — 50 to 100 LBAs</h3>
+  <p>App Runner's simplicity stops being the cheapest option at this volume; ECS Fargate behind an Application Load Balancer gives finer-grained autoscaling. The database moves to a larger Multi-AZ instance (or Aurora Serverless v2) with a read replica for reporting load.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Line item</th><th>Service</th><th class="num">Monthly</th></tr></thead>
+      <tbody>
+        <tr><td>Backend compute</td><td>ECS Fargate (≈4 tasks, 2 vCPU / 4 GB) + Application Load Balancer</td><td class="num">$350</td></tr>
+        <tr><td>Database</td><td>RDS/Aurora PostgreSQL, Multi-AZ + read replica, larger instance class</td><td class="num">$500</td></tr>
+        <tr><td>Supporting services</td><td>S3, Secrets Manager, Route 53, CloudWatch, WAF, NAT, data transfer</td><td class="num">$200</td></tr>
+        <tr><td>Frontend hosting</td><td>Vercel Pro, multiple seats + usage overage</td><td class="num">$150</td></tr>
+      </tbody>
+      <tfoot><tr><td colspan="2">Total</td><td class="num">$1,200</td></tr></tfoot>
+    </table>
+  </div>
+
+  <div class="callout">
+    <strong>Why the database is the line to watch</strong>
+    Compute and the Vercel bill grow roughly with traffic, which grows roughly with LBA count — predictable. The database is the one line that can jump in steps (micro → small → medium → a read replica) rather than sliding smoothly, because Postgres doesn't scale horizontally the way a stateless API does. Budget for the next instance size up before you need it, and revisit <a href="aws-provisioning-plan.html#database">the RDS-vs-Neon decision</a> once a single LBA's reporting queries start competing with another's lot-creation traffic.
+  </div>
+
+  <h2 id="neon-vs-rds">4. Database choice: keep Neon, or move to RDS?</h2>
+  <p>The figures above assume a move to Amazon RDS, which is the more "fully AWS" and more predictable option. Staying on Neon (the current provider) is a legitimate alternative, especially early on — it avoids a data migration entirely. Roughly, for the same workload:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th></th><th>Neon (Launch plan)</th><th>Amazon RDS for PostgreSQL</th></tr></thead>
+      <tbody>
+        <tr><td>Pricing model</td><td>Usage-based: ≈$0.106 per compute-hour (CU-hr) + ≈$0.35/GB-month storage, on top of a monthly plan fee</td><td>Flat instance-hour rate by instance class + ≈$0.115/GB-month storage (gp3)</td></tr>
+        <tr><td>Pilot-scale monthly</td><td>≈$40–$70</td><td>≈$30</td></tr>
+        <tr><td>Migration effort</td><td>None — already in production</td><td>One-time export/import, connection string + pooling changes</td></tr>
+        <tr><td>Best fit</td><td>Pilot, and anywhere usage is spiky (serverless autosuspend saves money between harvest seasons)</td><td>Growth/Scale, or once VPC-private networking, IAM-based access, or predictable billing matter more than migration-avoidance</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Recommendation: don't migrate the database on day one. Launch the AWS-hosted backend against the existing Neon database (it's already reachable over the internet via its pooled connection string), and revisit RDS once there's a second or third paying LBA and the cost/control trade-off is worth the migration effort.</p>
+
+  <h2 id="pricing">5. What this means for the subscription price</h2>
+  <p>The per-LBA infrastructure cost falls from roughly <strong>$25–125/month</strong> at pilot scale down to <strong>$12–24/month</strong> once the platform carries 50–100 LBAs — classic SaaS economics: fixed costs get shared across more tenants. That curve is useful for margin planning, but it's the wrong thing to price <em>from</em> directly, for two reasons: infrastructure is a small fraction of what it actually costs to run this as a business (support, onboarding, data verification, feature work dwarf the AWS bill), and a price that chases your own falling infra cost down over time gives away margin you should be keeping as the business scales.</p>
+  <p>A more durable approach is to set subscription tiers by what the LBA gets (register size, user seats, support level) and let margin expand as the shared infrastructure gets more efficient underneath it:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Plan</th><th>Fits</th><th class="num">Suggested price / LBA / mo</th></tr></thead>
+      <tbody>
+        <tr><td>Starter</td><td>Up to 500 farmers, 3 users</td><td class="num">$99</td></tr>
+        <tr><td>Growth</td><td>Up to 2,000 farmers, 10 users</td><td class="num">$249</td></tr>
+        <tr><td>Enterprise</td><td>2,000+ farmers, SSO/compliance asks, SLA</td><td class="num">from $499</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>Against that pricing, gross margin on infrastructure alone (ignoring people-cost) looks like this at each growth stage, assuming a blended average sale price around $150/LBA/month:</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Stage</th><th class="num">Infra cost / LBA</th><th class="num">at $150/LBA price</th><th class="num">Gross margin</th></tr></thead>
+      <tbody>
+        <tr><td>Pilot (5 LBAs)</td><td class="num">$25</td><td class="num">$150</td><td class="num">83%</td></tr>
+        <tr><td>Growth (25 LBAs)</td><td class="num">$20</td><td class="num">$150</td><td class="num">87%</td></tr>
+        <tr><td>Scale (100 LBAs)</td><td class="num">$12</td><td class="num">$150</td><td class="num">92%</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>That's a healthy margin even at pilot scale — the risk at pilot scale isn't the infra bill, it's that fixed costs (one RDS instance, one App Runner service, one Vercel Pro seat) are being carried by only 1–5 customers. Don't discount the first LBAs below roughly $100–150/month; that's close to the actual fully-loaded infra cost of the first tenant alone.</p>
+
+  <h2 id="not-included">6. What this estimate deliberately leaves out</h2>
+  <ul>
+    <li><strong>Engineering and support time</strong> — the actual dominant cost of running a SaaS product at this scale; this document only prices infrastructure.</li>
+    <li><strong>One-time migration work</strong> — containerizing the app, standing up the AWS account, and (if chosen) the Vercel/AWS API split described in the <a href="aws-provisioning-plan.html">provisioning plan</a> — these are development hours, not a recurring bill.</li>
+    <li><strong>Payment processing fees</strong> on whatever you charge LBAs (typically 1.5–3.5%).</li>
+    <li><strong>Data transfer and traffic spikes</strong> beyond the harvest-season pattern already assumed — a true surge (e.g. a nationwide onboarding push) should be re-estimated separately.</li>
+  </ul>
+
+  <div class="sources">
+    <strong>Sources consulted (November 2026)</strong>
+    <ul>
+      <li><a href="https://aws.amazon.com/apprunner/pricing/">AWS App Runner pricing</a></li>
+      <li><a href="https://aws.amazon.com/fargate/pricing/">AWS Fargate pricing</a></li>
+      <li><a href="https://www.bytebase.com/dbcost/rds/instance/db.t4g.micro/">Amazon RDS db.t4g.micro rate comparison — Bytebase</a> and <a href="https://www.bytebase.com/dbcost/rds/instance/db.t4g.small/">db.t4g.small</a></li>
+      <li><a href="https://www.vantage.sh/blog/fargate-pricing">AWS Fargate Pricing Explained — Vantage</a></li>
+      <li><a href="https://cloudzero.com/blog/aws-alb-pricing/">AWS ALB pricing — CloudZero</a></li>
+      <li><a href="https://www.jetadmin.io/blog/neon-pricing/">Neon pricing 2026 — JetAdmin</a>, <a href="https://selfhost.dev/neon-pricing-cost-of-serverless-postgres/">Selfhost.dev Neon pricing</a></li>
+      <li><a href="https://makerkit.dev/blog/saas/vercel-cost">Vercel cost in 2026 — MakerKit</a></li>
+    </ul>
+  </div>
+
+  <footer class="doc-foot">
+    <span>Nigeria LBA Level Traceability — internal planning document</span>
+    <span><a href="aws-provisioning-plan.html">Next: AWS provisioning plan &rarr;</a></span>
+  </footer>
+
+</div>
+</body>
+</html>

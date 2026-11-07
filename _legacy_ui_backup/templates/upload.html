@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Master Data · Nigeria LBA Level Traceability{% endblock %}
+{% block content %}
+<h1>Master Data</h1>
+<p class="subtitle">Upload or refresh the farmer register. Re-uploading updates existing farmers (matched by Farmer Code) and adds any new ones &mdash; nothing is deleted.</p>
+
+{% if msg %}<div class="msg ok">{{ msg }}</div>{% endif %}
+{% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+
+<div class="card">
+  <h3>Upload farmer list (.xlsx)</h3>
+  <form action="/upload" method="post" enctype="multipart/form-data">
+    <div class="field">
+      <input type="file" name="file" accept=".xlsx" required>
+    </div>
+    <button class="btn" type="submit">Upload</button>
+    <a class="btn secondary" href="/upload/template">Download template</a>
+  </form>
+  <p class="hint">Required columns: farmer_code, first_name, surname, potential_volume_kg.
+     Optional: gender, date_of_birth, phone_number, nin, community, num_plots, farm_size_ha.
+     Column names are not case sensitive.</p>
+</div>
+
+<div class="danger-zone">
+  <h3>Clear all data</h3>
+  <p>Removes every farmer, lot, delivery and incentive record from this app. Use this to start a new season from scratch. This cannot be undone &mdash; there is no backup.</p>
+  <form action="/data/clear" method="post" onsubmit="return confirm('This permanently deletes every farmer and lot record. Continue?');">
+    <div class="field" style="max-width:260px;">
+      <label>Type CLEAR to confirm</label>
+      <input type="text" name="confirm" placeholder="CLEAR" required>
+    </div>
+    <button class="btn red" type="submit">Clear all data</button>
+  </form>
+</div>
+{% endblock %}

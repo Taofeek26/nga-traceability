@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% set narrow = true %}
+{% block title %}Master Data{% endblock %}
+{% block content %}
+
+{{ ui.page_header("Master Data", "Upload or refresh the farmer register. Re-uploading updates existing farmers (matched by Farmer Code) and adds new ones — nothing is deleted.", eyebrow="Administration") }}
+
+{% if msg %}{{ ui.alert(msg, "success") }}{% endif %}
+{% if error %}{{ ui.alert(error, "error") }}{% endif %}
+
+<form class="card" action="/upload" method="post" enctype="multipart/form-data">
+  <div class="card__header">
+    <div>
+      <div class="card__title">{{ ui.icon("file-sheet") }}Upload farmer list</div>
+      <div class="card__subtitle">Excel workbook (.xlsx), first sheet is read</div>
+    </div>
+    <a class="btn btn--soft btn--sm" href="/upload/template">{{ ui.icon("download") }}Template</a>
+  </div>
+  <div class="card__body">
+    <label class="dropzone" id="dropzone">
+      <input type="file" id="file-input" name="file" accept=".xlsx" required
+             onchange="this.parentElement.querySelector('.dropzone__file').textContent = this.files[0] ? this.files[0].name : ''">
+      <span class="dropzone__icon">{{ ui.icon("upload", "lg") }}</span>
+      <span class="dropzone__title">Drop your .xlsx here or <u>browse</u></span>
+      <span class="dropzone__hint">Column names are not case sensitive</span>
+      <span class="dropzone__file"></span>
+    </label>
+    <script>
+      (function () {
+        var zone = document.getElementById("dropzone");
+        var input = document.getElementById("file-input");
+        var filenameEl = zone.querySelector(".dropzone__file");
+        ["dragenter", "dragover"].forEach(function (evt) {
+          zone.addEventListener(evt, function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            zone.classList.add("dropzone--active");
+          });
+        });
+        ["dragleave", "dragend", "drop"].forEach(function (evt) {
+          zone.addEventListener(evt, function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            zone.classList.remove("dropzone--active");
+          });
+        });
+        zone.addEventListener("drop", function (e) {
+          var files = e.dataTransfer && e.dataTransfer.files;
+          if (files && files.length) {
+            input.files = files;
+            filenameEl.textContent = files[0].name;
+          }
+        });
+      })();
+    </script>
+
+    <div class="grid grid--2" style="margin-top:var(--space-5);gap:var(--space-4);">
+      <div>
+        <div class="label" style="margin-bottom:var(--space-2);">Required columns</div>
+        <div class="chips">
+          {% for c in ["Farmer Code", "Farmer Full name", "Potential Volume"] %}<span class="code-tag">{{ c }}</span>{% endfor %}
+        </div>
+        <p class="hint" style="margin-top:var(--space-2);">"Farmer Full name" can also be given as separate "First name" + "Surname" columns.</p>
+      </div>
+      <div>
+        <div class="label" style="margin-bottom:var(--space-2);">Optional columns</div>
+        <div class="chips">
+          {% for c in ["Farmer id", "Gender", "Date of birth", "Phone number", "NIN", "Community Name", "Num plots", "Total Farm Size Mapped (Ha)"] %}<span class="code-tag" style="background:var(--cream);color:var(--taupe);">{{ c }}</span>{% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="card__footer">
+    <button class="btn btn--primary" type="submit">{{ ui.icon("upload") }}Upload</button>
+  </div>
+</form>
+
+<div class="card" style="margin-top:var(--space-6);">
+  <div class="card__header">
+    <div>
+      <div class="card__title">{{ ui.icon("download") }}Export yield monitoring</div>
+      <div class="card__subtitle">Current register in the same layout, with delivered volume, variance and premium calculated per farmer.</div>
+    </div>
+    <a class="btn btn--soft btn--sm" href="/farmers/export">{{ ui.icon("download") }}Export .xlsx</a>
+  </div>
+</div>
+
+<div class="danger-zone" style="margin-top:var(--space-10);">
+  <div class="danger-zone__header">
+    <span class="danger-zone__icon">{{ ui.icon("trash") }}</span>
+    <div>
+      <div class="danger-zone__title">Clear all data</div>
+      <p class="danger-zone__text">Removes every farmer, lot, delivery and incentive record for this LBA. Use this to start a new season from scratch. This cannot be undone — there is no backup.</p>
+    </div>
+  </div>
+  <form class="danger-zone__body" action="/data/clear" method="post" onsubmit="return confirm('This permanently deletes every farmer and lot record. Continue?');">
+    <div class="field" style="max-width:280px;">
+      <label class="label" for="confirm-clear">Type <span class="mono">CLEAR</span> to confirm</label>
+      <input class="input" id="confirm-clear" type="text" name="confirm" placeholder="CLEAR" required autocomplete="off">
+    </div>
+    <div class="form-actions" style="margin-top:var(--space-4);">
+      <button class="btn btn--danger" type="submit">{{ ui.icon("trash") }}Clear all data</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Nigeria LBA Level Traceability{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <a class="brand" href="/">Nigeria LBA<br>Level Traceability</a>
+      <nav>
+        <a href="/" class="{{ 'active' if request.url.path == '/' else '' }}">Dashboard</a>
+        <a href="/farmers" class="{{ 'active' if request.url.path.startswith('/farmers') else '' }}">Farmers</a>
+        <a href="/lots/new" class="{{ 'active' if request.url.path == '/lots/new' else '' }}">New Lot</a>
+        <a href="/lots" class="{{ 'active' if request.url.path.startswith('/lots') and request.url.path != '/lots/new' else '' }}">Lot History</a>
+        <a href="/upload" class="{{ 'active' if request.url.path.startswith('/upload') else '' }}">Master Data</a>
+        <a href="/settings" class="{{ 'active' if request.url.path == '/settings' else '' }}">Settings</a>
+      </nav>
+      <div class="sidebar-foot">
+        {% if lba_name %}
+        <div class="lba-name">{{ lba_name }}</div>
+        <form method="post" action="/logout"><button type="submit" class="link-btn">Log out</button></form>
+        {% endif %}
+      </div>
+    </aside>
+    <div class="main-col">
+      <main class="container">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+</body>
+</html>

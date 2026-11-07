@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Farmers · Nigeria LBA Level Traceability{% endblock %}
+{% block content %}
+<h1>Farmers</h1>
+<p class="subtitle">{{ farmers|length }} farmer(s){% if q %} matching &ldquo;{{ q }}&rdquo;{% endif %}.</p>
+
+<form class="search-box" method="get" action="/farmers">
+  <input type="text" name="q" value="{{ q }}" placeholder="Search by name, code or community&hellip;">
+</form>
+
+<div class="card">
+  {% if farmers %}
+  <table>
+    <tr>
+      <th>Code</th><th>Name</th><th>Community</th>
+      <th class="num">Potential (kg)</th><th class="num">Delivered (kg)</th>
+      <th class="num">Remaining (kg)</th><th>Status</th>
+    </tr>
+    {% for f in farmers %}
+    {% set remaining = f.potential_volume_kg - f.delivered %}
+    {% set pct = (f.delivered / f.potential_volume_kg * 100) if f.potential_volume_kg > 0 else 0 %}
+    <tr>
+      <td><a href="/farmers/{{ f.farmer_code }}">{{ f.farmer_code }}</a></td>
+      <td>{{ f.first_name }} {{ f.surname }}</td>
+      <td>{{ f.community or "&mdash;" }}</td>
+      <td class="num">{{ "%.0f"|format(f.potential_volume_kg) }}</td>
+      <td class="num">{{ "%.0f"|format(f.delivered) }}</td>
+      <td class="num">{{ "%.0f"|format(remaining) }}</td>
+      <td>
+        {% if not f.active %}<span class="badge inactive">Inactive</span>
+        {% elif pct >= 100 %}<span class="badge full">At limit</span>
+        {% elif pct >= 90 %}<span class="badge warn">Near limit</span>
+        {% else %}<span class="badge ok">OK</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="empty">No farmers found. <a href="/upload">Upload a master list</a> to get started.</p>
+  {% endif %}
+</div>
+{% endblock %}

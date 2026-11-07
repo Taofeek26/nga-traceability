@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% import "macros.html" as ui %}
+{% block title %}Lot History{% endblock %}
+{% block content %}
+
+{% call ui.page_header("Lot History", lots|length ~ " lot(s) recorded.") %}
+  {% if role in ("admin", "to") %}<a class="btn btn--accent" href="/lots/new">{{ ui.icon("plus") }}New lot</a>{% endif %}
+{% endcall %}
+
+<div class="card">
+  {% if lots %}
+  <div class="table-wrap">
+    <table class="table">
+      <thead>
+        <tr><th>Lot</th><th>Receipts</th><th class="is-num">Farmers</th><th class="is-num">Volume (kg)</th><th>Status</th><th class="hide-sm">Note</th><th class="is-action"><span class="sr-only">Open</span></th></tr>
+      </thead>
+      <tbody>
+      {% for l in lots %}
+      <tr>
+        <td><span class="cell-primary">{{ l.lot_date }}</span><span class="cell-secondary">Lot #{{ l.lot_no }}</span></td>
+        <td><span class="code-tag">{{ l.receipt_start }}–{{ l.receipt_end }}</span></td>
+        <td class="is-num">{{ l.n_farmers }}</td>
+        <td class="is-num">{{ ui.kg(l.total_volume_kg, 2) }}</td>
+        <td>{{ ui.lot_status(l.status) }}</td>
+        <td class="hide-sm is-muted">{{ l.note or "" }}</td>
+        <td class="is-action"><a class="btn btn--ghost btn--sm" href="/lots/{{ l.id }}">View {{ ui.icon("chevron-right") }}</a></td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  {{ ui.empty_state("No lots recorded yet", "Record a lot to generate its farmer list automatically.", "history", "/lots/new", "Record first lot") }}
+  {% endif %}
+</div>
+{% endblock %}

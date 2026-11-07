@@ -1,0 +1,148 @@
+{#- Component gallery. Rendered by build_preview.py → preview/out/components.html -#}
+{% import "macros.html" as ui %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Components · LBA Design System</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/ds/tokens.css">
+  <link rel="stylesheet" href="/static/ds/lba-ui.css">
+  <style>
+    .swatches { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:var(--space-3); }
+    .swatch { border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--color-border-subtle); background:var(--white); font-size:var(--text-xs); }
+    .swatch__chip { height:64px; }
+    .swatch__meta { padding:var(--space-2) var(--space-3); }
+    .demo-row { display:flex; flex-wrap:wrap; gap:var(--space-3); align-items:center; }
+  </style>
+</head>
+<body>
+{% include "partials/icons.html" %}
+<main class="content" style="margin:0 auto;">
+  {{ ui.page_header("Components", "Every building block of the LBA Traceability UI. The colour palette is the app's original theme.", eyebrow="Design system") }}
+
+  <div class="section-title"><h2>Brand palette</h2></div>
+  <div class="swatches">
+    {% for name, hex in [("brown-dark","#2A1B12"),("brown","#4B2F21"),("brown-mid","#6B4A34"),("taupe","#8A7A6E"),("cream","#F7F2EC"),("sand","#EFE8DF"),("gold","#C89B3C"),("red","#E1251B"),("green","#2E7D32"),("white","#FFFFFF")] %}
+    <div class="swatch"><div class="swatch__chip" style="background:var(--{{ name }})"></div><div class="swatch__meta"><strong>--{{ name }}</strong><br><span class="mono text-muted">{{ hex }}</span></div></div>
+    {% endfor %}
+  </div>
+
+  <div class="section-title"><h2>Buttons</h2></div>
+  <div class="card"><div class="card__body stack-sm">
+    <div class="demo-row">
+      <button class="btn btn--accent">{{ ui.icon("plus") }}Accent</button>
+      <button class="btn btn--primary">Primary</button>
+      <button class="btn btn--secondary">{{ ui.icon("upload") }}Secondary</button>
+      <button class="btn btn--soft">Soft</button>
+      <button class="btn btn--ghost">Ghost</button>
+      <button class="btn btn--danger">{{ ui.icon("trash") }}Danger</button>
+      <button class="btn btn--danger-soft">Danger soft</button>
+      <button class="btn btn--primary" disabled>Disabled</button>
+    </div>
+    <div class="demo-row">
+      <button class="btn btn--primary btn--sm">Small</button>
+      <button class="btn btn--primary">Default</button>
+      <button class="btn btn--primary btn--lg">Large</button>
+      <button class="btn btn--secondary btn--icon" aria-label="Search">{{ ui.icon("search") }}</button>
+      <a class="link-arrow" href="#">Link arrow {{ ui.icon("arrow-right") }}</a>
+    </div>
+  </div></div>
+
+  <div class="section-title"><h2>Stat tiles</h2></div>
+  <section class="stats">
+    {{ ui.stat("Farmers on file", 412, icon_name="users", tone="brown", meta="398 active") }}
+    {{ ui.stat("Potential volume", ui.kg(612500), "kg", icon_name="leaf", tone="green") }}
+    {{ ui.stat("Delivered so far", ui.kg(318240), "kg", icon_name="scale", meta="52% used") }}
+    {{ ui.stat("Lots recorded", 14, icon_name="package", highlight=True, meta="All time") }}
+  </section>
+  <div class="summary">
+    <div class="summary__item"><div class="summary__label">Lot date</div><div class="summary__value">2026-10-28</div></div>
+    <div class="summary__item"><div class="summary__label">Receipts</div><div class="summary__value mono">1301–1330</div></div>
+    <div class="summary__item"><div class="summary__label">Total</div><div class="summary__value">4,120.50 kg</div></div>
+  </div>
+
+  <div class="section-title"><h2>Alerts &amp; badges</h2></div>
+  {{ ui.alert("Farmer list generated: 30 farmers.", "success", "Saved") }}
+  {{ ui.alert("Receipt range is larger than the number of eligible farmers.", "error") }}
+  {{ ui.alert("No active farmers have remaining quota.", "warning") }}
+  {{ ui.alert("287 farmers currently eligible.", "info") }}
+  <div class="demo-row">
+    {{ ui.farmer_status(True, 40) }} {{ ui.farmer_status(True, 95) }} {{ ui.farmer_status(True, 100) }} {{ ui.farmer_status(False, 0) }}
+    <span class="badge badge--gold badge--plain">Training stipend</span>
+    <span class="badge badge--brown badge--plain">New</span>
+    <span class="code-tag">FC-0012</span>
+    {{ ui.avatar("Adaeze", "Okafor") }} {{ ui.avatar("Agbor", "Station", "lg", "gold") }}
+  </div>
+
+  <div class="section-title"><h2>Progress</h2></div>
+  <div class="card"><div class="card__body stack-sm">
+    <div class="meter"><div class="meter__head"><span class="meter__label">Quota used</span><span class="meter__value">45%</span></div>{{ ui.progress(45, "lg") }}</div>
+    {{ ui.progress(93) }}
+    {{ ui.progress(100) }}
+    <div style="max-width:200px;">{{ ui.mini_meter(67) }}</div>
+  </div></div>
+
+  <div class="section-title"><h2>Forms</h2></div>
+  <form class="card" onsubmit="return false">
+    <div class="card__body">
+      <div class="form-section">
+        <div><div class="form-section__title">Form section</div><p class="form-section__desc">Description on the left, fields on the right.</p></div>
+        <div class="form-grid">
+          <div class="field"><label class="label">Text input</label><input class="input" placeholder="Placeholder"></div>
+          <div class="field"><label class="label">Select</label><select class="select"><option>Bonus</option></select></div>
+          <div class="field"><label class="label">With unit</label><div class="input-group"><input class="input" type="number" placeholder="0.00"><span class="input-group__addon">kg</span></div></div>
+          <div class="field"><label class="label">Currency</label><div class="input-group"><span class="input-group__addon">&#8358;</span><input class="input" type="number"></div></div>
+          <div class="field"><label class="label">Invalid</label><input class="input is-invalid" value="abc"><span class="field-error">Enter a number.</span></div>
+          <div class="field"><label class="label">Search</label><div class="input-group input-group--icon"><span class="input-group__icon">{{ ui.icon("search") }}</span><input class="input" placeholder="Search…"></div></div>
+          <div class="field field--full"><span class="label">Range</span><div class="range-pair"><input class="input" placeholder="Start"><span class="range-pair__sep">–</span><input class="input" placeholder="End"></div><span class="hint">Hint text sits under the field.</span></div>
+        </div>
+      </div>
+      <div class="form-section">
+        <div><div class="form-section__title">Dropzone</div></div>
+        <label class="dropzone"><input type="file"><span class="dropzone__icon">{{ ui.icon("upload", "lg") }}</span><span class="dropzone__title">Drop your .xlsx here or <u>browse</u></span><span class="dropzone__hint">Column names are not case sensitive</span></label>
+      </div>
+    </div>
+    <div class="card__footer"><button class="btn btn--ghost">Cancel</button><button class="btn btn--primary">Submit</button></div>
+  </form>
+
+  <div class="section-title"><h2>Table</h2></div>
+  <div class="card">
+    <div class="toolbar">
+      <div class="input-group input-group--icon toolbar__search"><span class="input-group__icon">{{ ui.icon("search") }}</span><input class="input" placeholder="Search…"></div>
+      <div class="chips"><a class="chip is-active" href="#">All <span class="chip__count">412</span></a><a class="chip" href="#">Near limit <span class="chip__count">12</span></a><a class="chip" href="#">Inactive</a></div>
+    </div>
+    <div class="table-wrap"><table class="table">
+      <thead><tr><th>Farmer</th><th class="is-num">Delivered (kg)</th><th>Quota</th><th>Status</th><th class="is-action"></th></tr></thead>
+      <tbody>
+        <tr><td><span class="cell-person">{{ ui.avatar("Adaeze","Okafor") }}<span><span class="cell-primary">Adaeze Okafor</span><span class="cell-secondary mono">FC-0012</span></span></span></td><td class="is-num">1,740</td><td>{{ ui.mini_meter(97) }}</td><td>{{ ui.farmer_status(True, 97) }}</td><td class="is-action"><a class="link-arrow" href="#">View {{ ui.icon("chevron-right") }}</a></td></tr>
+        <tr><td><span class="cell-person">{{ ui.avatar("Chinedu","Eze") }}<span><span class="cell-primary">Chinedu Eze</span><span class="cell-secondary mono">FC-0047</span></span></span></td><td class="is-num">610</td><td>{{ ui.mini_meter(41) }}</td><td>{{ ui.farmer_status(True, 41) }}</td><td class="is-action"><a class="link-arrow" href="#">View {{ ui.icon("chevron-right") }}</a></td></tr>
+      </tbody>
+      <tfoot><tr><td>Total</td><td class="is-num">2,350</td><td colspan="3"></td></tr></tfoot>
+    </table></div>
+  </div>
+
+  <div class="section-title"><h2>Description list, empty state, steps</h2></div>
+  <div class="grid grid--3">
+    <div class="card"><div class="card__body"><dl class="dl"><dt>Gender</dt><dd>Female</dd><dt>Phone</dt><dd>0803 555 0192</dd><dt>NIN</dt><dd class="mono">12345678901</dd></dl></div></div>
+    <div class="card">{{ ui.empty_state("No lots yet", "Record a lot to generate its farmer list.", "package", "#", "Record lot") }}</div>
+    <div class="card"><div class="card__body"><ol class="steps" style="grid-template-columns:1fr;"><li class="step is-done"><span class="step__num"></span><span class="step__title">Upload master list</span></li><li class="step"><span class="step__num"></span><span class="step__title">Record a lot</span></li></ol></div></div>
+  </div>
+
+  <div class="section-title"><h2>Danger zone &amp; action bar</h2></div>
+  <div class="danger-zone">
+    <div class="danger-zone__header"><span class="danger-zone__icon">{{ ui.icon("trash") }}</span><div><div class="danger-zone__title">Clear all data</div><p class="danger-zone__text">This cannot be undone.</p></div></div>
+    <div class="danger-zone__body"><div class="field" style="max-width:280px;"><label class="label">Type CLEAR to confirm</label><input class="input" placeholder="CLEAR"></div><div class="form-actions" style="margin-top:var(--space-4);"><button class="btn btn--danger">Clear all data</button></div></div>
+  </div>
+  <div class="action-bar" style="position:static;"><span class="action-bar__text"><strong>30 farmers</strong> · 4,120.50 kg ready to export</span><div class="cluster"><a class="btn btn--secondary" href="#">Record another</a><a class="btn btn--accent" href="#">{{ ui.icon("download") }}Export .xlsx</a></div></div>
+
+  <div class="section-title"><h2>Icons</h2></div>
+  <div class="card"><div class="card__body demo-row" style="gap:var(--space-5);color:var(--brown);">
+    {% for n in ["dashboard","users","user","plus","plus-circle","history","database","settings","logout","search","menu","x","chevron-right","arrow-left","arrow-right","download","upload","file-sheet","package","scale","truck","receipt","wallet","gift","map-pin","leaf","calendar","phone","id-card","check","check-circle","alert-circle","alert-triangle","info","trash","power","percent","sparkles","lock","shield"] %}
+    <span title="{{ n }}">{{ ui.icon(n, "lg") }}</span>
+    {% endfor %}
+  </div></div>
+</main>
+</body>
+</html>

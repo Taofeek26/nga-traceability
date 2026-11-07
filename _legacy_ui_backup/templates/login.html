@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in &middot; Nigeria LBA Level Traceability</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="auth-body">
+  <div class="auth-card">
+    <h1 class="auth-title">Nigeria LBA<br>Level Traceability</h1>
+    <p class="subtitle">Log in to your LBA's account.</p>
+    {% if error %}<div class="msg error">{{ error }}</div>{% endif %}
+    {% if msg %}<div class="msg ok">{{ msg }}</div>{% endif %}
+    <form method="post" action="/login">
+      <div class="field">
+        <label>Email</label>
+        <input type="text" name="email" required autofocus>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input type="password" name="password" required>
+      </div>
+      <button class="btn" type="submit" style="width:100%;">Log in</button>
+    </form>
+    <p class="auth-switch">No account yet? <a href="/signup">Register your LBA</a></p>
+  </div>
+</body>
+</html>

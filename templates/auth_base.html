@@ -1,0 +1,56 @@
+{#- Split-screen shell for login / signup (no sidebar).
+    Child templates set {% block title %}, {% block heading %}, {% block desc %}, {% block form %}, {% block switch %}. -#}
+{% import "macros.html" as ui %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#2A1B12">
+  <title>{% block title %}{% endblock %} · Nigeria LBA Level Traceability</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="/static/ds/tokens.css">
+  <link rel="stylesheet" href="/static/ds/lba-ui.css">
+</head>
+<body>
+{% include "partials/icons.html" %}
+<div class="auth">
+  <aside class="auth__aside">
+    <a class="brand" href="/login">
+      <span class="brand__mark">{{ ui.icon("leaf") }}</span>
+      <span class="brand__text">
+        <span class="brand__name">Nigeria LBA</span>
+        <span class="brand__sub">Level Traceability</span>
+      </span>
+    </a>
+    <h2 class="auth__headline">Every kilo, traced back to a <em>registered farmer</em>.</h2>
+    <p class="auth__lead">Turn a broker lot's total weight and receipt range into a quota-respecting farmer list — ready to export in seconds.</p>
+    <ul class="auth__features">
+      <li>{{ ui.icon("check-circle") }}<span>Farmer register from your own Excel master list</span></li>
+      <li>{{ ui.icon("check-circle") }}<span>Automatic allocation that never exceeds a farmer's potential volume</span></li>
+      <li>{{ ui.icon("check-circle") }}<span>Private to your LBA — no other account can see your data</span></li>
+    </ul>
+    <p class="auth__foot">Nigeria LBA Level Traceability</p>
+  </aside>
+
+  <main class="auth__main">
+    <div class="auth__panel">
+      <div class="auth__mobile-brand">
+        <a class="brand" href="/login">
+          <span class="brand__mark">{{ ui.icon("leaf") }}</span>
+          <span class="brand__text"><span class="brand__name">Nigeria LBA</span><span class="brand__sub">Level Traceability</span></span>
+        </a>
+      </div>
+      <h1 class="auth__title">{% block heading %}{% endblock %}</h1>
+      <p class="auth__desc">{% block desc %}{% endblock %}</p>
+      {% if error %}{{ ui.alert(error, "error") }}{% endif %}
+      {% if msg %}{{ ui.alert(msg, "success") }}{% endif %}
+      {% block form %}{% endblock %}
+      <p class="auth__switch">{% block switch %}{% endblock %}</p>
+    </div>
+  </main>
+</div>
+</body>
+</html>
